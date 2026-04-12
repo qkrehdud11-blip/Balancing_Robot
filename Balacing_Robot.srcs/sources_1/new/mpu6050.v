@@ -28,6 +28,7 @@ module mpu6050(
     output wire        scl,
     // 출력
     output wire [15:0] accel_x
+    // hiuhiuhihiuhi
 );
 
 endmodule
