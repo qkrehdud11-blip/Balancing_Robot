@@ -1,48 +1,50 @@
 `timescale 1ns / 1ps
 //================================================================================
 // top -> Basys3 보드의 최상위 모듈
-//        하위 모듈을 연결하고 I2C, LED, reset 등의 외부 핀을 관리
+//        하위 모듈을 연결하고 I2C, reset 등의 외부 핀을 관리
 //================================================================================
-
-
-
-
 
 module top
 (
-    input wire clk,
-    input wire rst_n,
+    input  wire clk,
+    input  wire rst_n,
 
-    inout wire i2c_sda,
-    inout wire i2c_scl
-    
+    inout  wire i2c_sda,
+    inout  wire i2c_scl
 );
 
-
+//================================================================================
 // 내부 신호
+//================================================================================
 wire tick;
 wire sda_enable;
 wire scl_enable;
+wire ack_ok;
 
-
+//================================================================================
 // clk_divider 인스턴스
+//================================================================================
 clk_divider u_clk_divider
+(
+    .clk   (clk),
+    .rst_n (rst_n),
+    .tick  (tick)
+);
+
+//================================================================================
+// i2c_master 인스턴스
+// - sda_in에는 실제 i2c_sda 핀 상태를 입력으로 전달
+//================================================================================
+i2c_master u_i2c_master
 (
     .clk        (clk),
     .rst_n      (rst_n),
-    .tick       (tick)
+    .tick       (tick),
+    .sda_in     (i2c_sda),
+    .sda_enable (sda_enable),
+    .scl_enable (scl_enable),
+    .ack_ok     (ack_ok)
 );
-
-// i2c_master 인스턴스
-i2c_master u_i2c_master
-(
-    .clk           (clk),
-    .rst_n         (rst_n),
-    .tick          (tick),
-    .sda_enable    (sda_enable),
-    .scl_enable    (scl_enable)
-);
-
 
 //================================================================================
 // open-drain 연결
@@ -51,6 +53,5 @@ i2c_master u_i2c_master
 //================================================================================
 assign i2c_sda = (sda_enable) ? 1'b0 : 1'bz;
 assign i2c_scl = (scl_enable) ? 1'b0 : 1'bz;
-
 
 endmodule
