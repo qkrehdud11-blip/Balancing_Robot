@@ -3,9 +3,9 @@
 // Company: 
 // Engineer: 
 // 
-// Create Date: 04/12/2026 08:59:24 PM
+// Create Date: 04/12/2026 11:40:38 PM
 // Design Name: 
-// Module Name: mpu6050
+// Module Name: l298n
 // Project Name: 
 // Target Devices: 
 // Tool Versions: 
@@ -20,14 +20,7 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-module mpu6050(
-    input  wire        clk,
-    input  wire        rst,
-    // I2C 인터페이스 (MPU6050 연결용)
-    inout  wire        sda,
-    output wire        scl,
-    // 출력
-    output wire [15:0] accel_x
-);
+module l298n(
 
+    );
 endmodule
