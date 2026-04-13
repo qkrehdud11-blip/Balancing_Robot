@@ -2,14 +2,7 @@
 //================================================================================
 // top
 // - Basys3 보드용 최상위 모듈
-// - clk_divider, mpu6050_ctrl, i2c_master 연결
-// - I2C open-drain 핀 제어
-// - 현재는 LED로 MPU6050 상태를 간단히 확인
-//
-// LED 해석
-//   led[7:0] : accel_x[15:8] (X축 가속도 상위 바이트)
-//   led[8]   : init_done     (초기화 완료)
-//   led[9]   : data_valid    (데이터 갱신 완료 pulse 성격)
+// - MPU6050 + UART 디버그
 //================================================================================
 
 module top
@@ -20,15 +13,12 @@ module top
     inout  wire       i2c_sda,
     inout  wire       i2c_scl,
 
+    output wire       uart_tx,
     output wire [9:0] led
 );
 
-//================================================================================
-// 내부 신호
-//================================================================================
 wire tick;
 
-// mpu6050_ctrl <-> i2c_master
 wire        start_req;
 wire        rw;
 wire [7:0]  reg_addr;
@@ -38,19 +28,24 @@ wire        done;
 wire        ack_ok;
 wire [7:0]  rx_data;
 
-// i2c 핀 제어
 wire sda_enable;
 wire scl_enable;
 
-// MPU6050 데이터
 wire signed [15:0] accel_x;
 wire signed [15:0] accel_y;
 wire signed [15:0] accel_z;
+
+wire signed [15:0] gyro_x;
+wire signed [15:0] gyro_y;
+wire signed [15:0] gyro_z;
+
 wire               init_done;
 wire               data_valid;
 
+wire uart_tx_wire;
+
 //================================================================================
-// clk_divider
+// clk divider
 //================================================================================
 clk_divider u_clk_divider
 (
@@ -60,8 +55,7 @@ clk_divider u_clk_divider
 );
 
 //================================================================================
-// mpu6050_ctrl
-// - MPU6050 초기화 + accel 3축 읽기 FSM
+// MPU6050 control
 //================================================================================
 mpu6050_ctrl u_mpu6050_ctrl
 (
@@ -82,13 +76,17 @@ mpu6050_ctrl u_mpu6050_ctrl
     .accel_x    (accel_x),
     .accel_y    (accel_y),
     .accel_z    (accel_z),
+
+    .gyro_x     (gyro_x),
+    .gyro_y     (gyro_y),
+    .gyro_z     (gyro_z),
+
     .init_done  (init_done),
     .data_valid (data_valid)
 );
 
 //================================================================================
-// i2c_master
-// - 1-byte register read / write 지원
+// I2C master
 //================================================================================
 i2c_master u_i2c_master
 (
@@ -112,20 +110,45 @@ i2c_master u_i2c_master
 );
 
 //================================================================================
-// I2C open-drain 연결
-// enable = 1 -> Low로 당김
-// enable = 0 -> release(Z), 외부 pull-up에 의해 High
+// UART debug
+//================================================================================
+mpu6050_debug_uart u_mpu6050_debug_uart
+(
+    .clk        (clk),
+    .rst_n      (rst_n),
+    .init_done  (init_done),
+    .data_valid (data_valid),
+
+    .accel_x    (accel_x),
+    .accel_y    (accel_y),
+    .accel_z    (accel_z),
+
+    .gyro_x     (gyro_x),
+    .gyro_y     (gyro_y),
+    .gyro_z     (gyro_z),
+
+    .uart_tx_o  (uart_tx_wire)
+);
+
+//================================================================================
+// open-drain I2C
 //================================================================================
 assign i2c_sda = (sda_enable) ? 1'b0 : 1'bz;
 assign i2c_scl = (scl_enable) ? 1'b0 : 1'bz;
 
 //================================================================================
-// LED 출력
-// - accel_x의 상위 바이트를 표시
-// - init_done / data_valid 상태 확인
+// UART output
+//================================================================================
+assign uart_tx = uart_tx_wire;
+
+//================================================================================
+// LED debug
+// led[7:0] : accel_x 상위 바이트
+// led[8]   : init_done
+// led[9]   : uart 상태
 //================================================================================
 assign led[7:0] = accel_x[15:8];
 assign led[8]   = init_done;
-assign led[9]   = data_valid;
+assign led[9]   = uart_tx_wire;
 
 endmodule
