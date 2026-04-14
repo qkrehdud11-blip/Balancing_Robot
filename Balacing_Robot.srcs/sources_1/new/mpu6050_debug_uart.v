@@ -1,13 +1,17 @@
 `timescale 1ns / 1ps
 //==============================================================================
 // mpu6050_debug_uart
-// - MPU6050 accel / gyro 6축 값을 Moserial에서 16진수로 출력
-// - 내부 값은 signed 16bit 그대로 사용
-// - 출력만 보기 쉽게 AX=1234 형태로 보냄
-// - 기존 uart_tx 모듈 그대로 사용
+// - MPU6050 raw 6축 데이터를 UART로 출력
+// - 출력 형식:
+//   AX=XXXX AY=XXXX AZ=XXXX GX=XXXX GY=XXXX GZ=XXXX
 //
-// 출력 예:
-// AX=FB34 AY=0124 AZ=3F84 GX=0012 GY=FF98 GZ=000A
+// 설명:
+// - accel/gyro 16bit raw 값을 16진수 4자리로 출력
+// - init_done 이후 data_valid가 들어오면 최신 샘플 준비로 보고
+//   print_tick 주기마다 한 줄씩 출력
+//
+// 주의:
+// - angle 계산은 제외한 raw 데이터 검증용
 //==============================================================================
 
 module mpu6050_debug_uart
@@ -20,7 +24,6 @@ module mpu6050_debug_uart
     input  wire signed [15:0] accel_x,
     input  wire signed [15:0] accel_y,
     input  wire signed [15:0] accel_z,
-
     input  wire signed [15:0] gyro_x,
     input  wire signed [15:0] gyro_y,
     input  wire signed [15:0] gyro_z,
@@ -28,9 +31,75 @@ module mpu6050_debug_uart
     output wire               uart_tx_o
 );
 
-    //==========================================================================
-    // 기존 uart_tx 사용
-    //==========================================================================
+    //--------------------------------------------------------------------------
+    // 상태 정의
+    //--------------------------------------------------------------------------
+    localparam [7:0]
+        ST_IDLE        = 8'd0,
+        ST_CAPTURE     = 8'd1,
+        ST_SPLIT       = 8'd2,
+
+        ST_TX_A1       = 8'd3,   ST_W_A1       = 8'd4,
+        ST_TX_X1       = 8'd5,   ST_W_X1       = 8'd6,
+        ST_TX_EQ1      = 8'd7,   ST_W_EQ1      = 8'd8,
+        ST_TX_AX3      = 8'd9,   ST_W_AX3      = 8'd10,
+        ST_TX_AX2      = 8'd11,  ST_W_AX2      = 8'd12,
+        ST_TX_AX1      = 8'd13,  ST_W_AX1      = 8'd14,
+        ST_TX_AX0      = 8'd15,  ST_W_AX0      = 8'd16,
+        ST_TX_SP1      = 8'd17,  ST_W_SP1      = 8'd18,
+
+        ST_TX_A2       = 8'd19,  ST_W_A2       = 8'd20,
+        ST_TX_Y1       = 8'd21,  ST_W_Y1       = 8'd22,
+        ST_TX_EQ2      = 8'd23,  ST_W_EQ2      = 8'd24,
+        ST_TX_AY3      = 8'd25,  ST_W_AY3      = 8'd26,
+        ST_TX_AY2      = 8'd27,  ST_W_AY2      = 8'd28,
+        ST_TX_AY1      = 8'd29,  ST_W_AY1      = 8'd30,
+        ST_TX_AY0      = 8'd31,  ST_W_AY0      = 8'd32,
+        ST_TX_SP2      = 8'd33,  ST_W_SP2      = 8'd34,
+
+        ST_TX_A3       = 8'd35,  ST_W_A3       = 8'd36,
+        ST_TX_Z1       = 8'd37,  ST_W_Z1       = 8'd38,
+        ST_TX_EQ3      = 8'd39,  ST_W_EQ3      = 8'd40,
+        ST_TX_AZ3      = 8'd41,  ST_W_AZ3      = 8'd42,
+        ST_TX_AZ2      = 8'd43,  ST_W_AZ2      = 8'd44,
+        ST_TX_AZ1      = 8'd45,  ST_W_AZ1      = 8'd46,
+        ST_TX_AZ0      = 8'd47,  ST_W_AZ0      = 8'd48,
+        ST_TX_SP3      = 8'd49,  ST_W_SP3      = 8'd50,
+
+        ST_TX_G1       = 8'd51,  ST_W_G1       = 8'd52,
+        ST_TX_X2       = 8'd53,  ST_W_X2       = 8'd54,
+        ST_TX_EQ4      = 8'd55,  ST_W_EQ4      = 8'd56,
+        ST_TX_GX3      = 8'd57,  ST_W_GX3      = 8'd58,
+        ST_TX_GX2      = 8'd59,  ST_W_GX2      = 8'd60,
+        ST_TX_GX1      = 8'd61,  ST_W_GX1      = 8'd62,
+        ST_TX_GX0      = 8'd63,  ST_W_GX0      = 8'd64,
+        ST_TX_SP4      = 8'd65,  ST_W_SP4      = 8'd66,
+
+        ST_TX_G2       = 8'd67,  ST_W_G2       = 8'd68,
+        ST_TX_Y2       = 8'd69,  ST_W_Y2       = 8'd70,
+        ST_TX_EQ5      = 8'd71,  ST_W_EQ5      = 8'd72,
+        ST_TX_GY3      = 8'd73,  ST_W_GY3      = 8'd74,
+        ST_TX_GY2      = 8'd75,  ST_W_GY2      = 8'd76,
+        ST_TX_GY1      = 8'd77,  ST_W_GY1      = 8'd78,
+        ST_TX_GY0      = 8'd79,  ST_W_GY0      = 8'd80,
+        ST_TX_SP5      = 8'd81,  ST_W_SP5      = 8'd82,
+
+        ST_TX_G3       = 8'd83,  ST_W_G3       = 8'd84,
+        ST_TX_Z2       = 8'd85,  ST_W_Z2       = 8'd86,
+        ST_TX_EQ6      = 8'd87,  ST_W_EQ6      = 8'd88,
+        ST_TX_GZ3      = 8'd89,  ST_W_GZ3      = 8'd90,
+        ST_TX_GZ2      = 8'd91,  ST_W_GZ2      = 8'd92,
+        ST_TX_GZ1      = 8'd93,  ST_W_GZ1      = 8'd94,
+        ST_TX_GZ0      = 8'd95,  ST_W_GZ0      = 8'd96,
+
+        ST_TX_CR       = 8'd97,  ST_W_CR       = 8'd98,
+        ST_TX_LF       = 8'd99,  ST_W_LF       = 8'd100;
+
+    reg [7:0] state;
+
+    //--------------------------------------------------------------------------
+    // UART 송신기 연결
+    //--------------------------------------------------------------------------
     reg        tx_start;
     reg [7:0]  tx_data;
     wire       tx_busy;
@@ -47,10 +116,10 @@ module mpu6050_debug_uart
         .done     (tx_done)
     );
 
-    //==========================================================================
-    // 출력 주기 설정
-    // 너무 자주 출력하지 않도록 10Hz 정도로 제한
-    //==========================================================================
+    //--------------------------------------------------------------------------
+    // 출력 주기 생성
+    // 100MHz 기준 약 10Hz
+    //--------------------------------------------------------------------------
     localparam [31:0] PRINT_CNT_MAX = 32'd9_999_999;
 
     reg [31:0] print_cnt;
@@ -74,9 +143,9 @@ module mpu6050_debug_uart
         end
     end
 
-    //==========================================================================
-    // data_valid pulse 보관
-    //==========================================================================
+    //--------------------------------------------------------------------------
+    // data_valid를 출력 시점까지 보관
+    //--------------------------------------------------------------------------
     reg sample_ready;
 
     always @(posedge clk or negedge rst_n) begin
@@ -84,75 +153,36 @@ module mpu6050_debug_uart
             sample_ready <= 1'b0;
         end
         else begin
-            if (!init_done) begin
+            if (!init_done)
                 sample_ready <= 1'b0;
-            end
             else begin
                 if (data_valid)
                     sample_ready <= 1'b1;
-
-                if (state == ST_CAPTURE)
+                else if (state == ST_CAPTURE)
                     sample_ready <= 1'b0;
             end
         end
     end
 
-    //==========================================================================
-    // 출력 중 값 고정용 스냅샷
-    //==========================================================================
+    //--------------------------------------------------------------------------
+    // 출력 중 값 고정
+    //--------------------------------------------------------------------------
     reg [15:0] ax_r, ay_r, az_r;
     reg [15:0] gx_r, gy_r, gz_r;
 
-    //==========================================================================
-    // 현재 출력 중인 센서값 / 라벨 / 16진수 각 자리
-    //==========================================================================
-    reg [2:0]  sensor_idx;
-    reg [15:0] cur_val;
-    reg [7:0]  label0;
-    reg [7:0]  label1;
+    //--------------------------------------------------------------------------
+    // 각 축별 16진수 nibble 분리
+    //--------------------------------------------------------------------------
+    reg [3:0] ax3, ax2, ax1, ax0;
+    reg [3:0] ay3, ay2, ay1, ay0;
+    reg [3:0] az3, az2, az1, az0;
+    reg [3:0] gx3, gx2, gx1, gx0;
+    reg [3:0] gy3, gy2, gy1, gy0;
+    reg [3:0] gz3, gz2, gz1, gz0;
 
-    reg [3:0] hex3, hex2, hex1, hex0;
-    reg [7:0] ascii_ch;
-
-    //==========================================================================
-    // 상태 정의
-    //==========================================================================
-    localparam [5:0]
-        ST_IDLE         = 6'd0,
-        ST_CAPTURE      = 6'd1,
-        ST_SELECT       = 6'd2,
-        ST_SPLIT        = 6'd3,
-
-        ST_TX_L0        = 6'd4,
-        ST_WAIT_L0      = 6'd5,
-        ST_TX_L1        = 6'd6,
-        ST_WAIT_L1      = 6'd7,
-        ST_TX_EQ        = 6'd8,
-        ST_WAIT_EQ      = 6'd9,
-
-        ST_TX_H3        = 6'd10,
-        ST_WAIT_H3      = 6'd11,
-        ST_TX_H2        = 6'd12,
-        ST_WAIT_H2      = 6'd13,
-        ST_TX_H1        = 6'd14,
-        ST_WAIT_H1      = 6'd15,
-        ST_TX_H0        = 6'd16,
-        ST_WAIT_H0      = 6'd17,
-
-        ST_TX_SEP       = 6'd18,
-        ST_WAIT_SEP     = 6'd19,
-        ST_NEXT_SENSOR  = 6'd20,
-
-        ST_TX_CR        = 6'd21,
-        ST_WAIT_CR      = 6'd22,
-        ST_TX_LF        = 6'd23,
-        ST_WAIT_LF      = 6'd24;
-
-    reg [5:0] state;
-
-    //==========================================================================
-    // 4bit hex nibble -> ASCII
-    //==========================================================================
+    //--------------------------------------------------------------------------
+    // 4bit hex 값을 ASCII 문자로 변환
+    //--------------------------------------------------------------------------
     function [7:0] hex_to_ascii;
         input [3:0] nib;
         begin
@@ -177,260 +207,159 @@ module mpu6050_debug_uart
         end
     endfunction
 
-    //==========================================================================
-    // 메인 FSM
-    //==========================================================================
+    //--------------------------------------------------------------------------
+    // UART 출력 FSM
+    //--------------------------------------------------------------------------
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            tx_start   <= 1'b0;
-            tx_data    <= 8'd0;
+            tx_start <= 1'b0;
+            tx_data  <= 8'd0;
 
-            ax_r       <= 16'd0;
-            ay_r       <= 16'd0;
-            az_r       <= 16'd0;
-            gx_r       <= 16'd0;
-            gy_r       <= 16'd0;
-            gz_r       <= 16'd0;
+            ax_r <= 16'd0; ay_r <= 16'd0; az_r <= 16'd0;
+            gx_r <= 16'd0; gy_r <= 16'd0; gz_r <= 16'd0;
 
-            sensor_idx <= 3'd0;
-            cur_val    <= 16'd0;
-            label0     <= 8'd0;
-            label1     <= 8'd0;
+            ax3 <= 4'd0; ax2 <= 4'd0; ax1 <= 4'd0; ax0 <= 4'd0;
+            ay3 <= 4'd0; ay2 <= 4'd0; ay1 <= 4'd0; ay0 <= 4'd0;
+            az3 <= 4'd0; az2 <= 4'd0; az1 <= 4'd0; az0 <= 4'd0;
+            gx3 <= 4'd0; gx2 <= 4'd0; gx1 <= 4'd0; gx0 <= 4'd0;
+            gy3 <= 4'd0; gy2 <= 4'd0; gy1 <= 4'd0; gy0 <= 4'd0;
+            gz3 <= 4'd0; gz2 <= 4'd0; gz1 <= 4'd0; gz0 <= 4'd0;
 
-            hex3       <= 4'd0;
-            hex2       <= 4'd0;
-            hex1       <= 4'd0;
-            hex0       <= 4'd0;
-            ascii_ch   <= 8'd0;
-
-            state      <= ST_IDLE;
+            state <= ST_IDLE;
         end
         else begin
-            // tx_start는 1클럭 pulse로만 사용
             tx_start <= 1'b0;
 
             case (state)
-                //------------------------------------------------------------------
-                // 대기
-                //------------------------------------------------------------------
                 ST_IDLE: begin
-                    if (init_done && sample_ready && print_tick) begin
+                    if (init_done && sample_ready && print_tick)
                         state <= ST_CAPTURE;
-                    end
                 end
 
-                //------------------------------------------------------------------
-                // 한 줄 시작 전에 현재 값 고정
-                //------------------------------------------------------------------
                 ST_CAPTURE: begin
-                    ax_r       <= accel_x[15:0];
-                    ay_r       <= accel_y[15:0];
-                    az_r       <= accel_z[15:0];
-                    gx_r       <= gyro_x[15:0];
-                    gy_r       <= gyro_y[15:0];
-                    gz_r       <= gyro_z[15:0];
-                    sensor_idx <= 3'd0;
-                    state      <= ST_SELECT;
-                end
-
-                //------------------------------------------------------------------
-                // 현재 출력할 축 선택
-                //------------------------------------------------------------------
-                ST_SELECT: begin
-                    case (sensor_idx)
-                        3'd0: begin cur_val <= ax_r; label0 <= "A"; label1 <= "X"; end
-                        3'd1: begin cur_val <= ay_r; label0 <= "A"; label1 <= "Y"; end
-                        3'd2: begin cur_val <= az_r; label0 <= "A"; label1 <= "Z"; end
-                        3'd3: begin cur_val <= gx_r; label0 <= "G"; label1 <= "X"; end
-                        3'd4: begin cur_val <= gy_r; label0 <= "G"; label1 <= "Y"; end
-                        default: begin cur_val <= gz_r; label0 <= "G"; label1 <= "Z"; end
-                    endcase
+                    ax_r  <= accel_x[15:0];
+                    ay_r  <= accel_y[15:0];
+                    az_r  <= accel_z[15:0];
+                    gx_r  <= gyro_x[15:0];
+                    gy_r  <= gyro_y[15:0];
+                    gz_r  <= gyro_z[15:0];
                     state <= ST_SPLIT;
                 end
 
-                //------------------------------------------------------------------
-                // 16비트 값을 nibble 4개로 분리
-                //------------------------------------------------------------------
                 ST_SPLIT: begin
-                    hex3  <= cur_val[15:12];
-                    hex2  <= cur_val[11:8];
-                    hex1  <= cur_val[7:4];
-                    hex0  <= cur_val[3:0];
-                    state <= ST_TX_L0;
+                    ax3 <= ax_r[15:12]; ax2 <= ax_r[11:8];  ax1 <= ax_r[7:4];  ax0 <= ax_r[3:0];
+                    ay3 <= ay_r[15:12]; ay2 <= ay_r[11:8];  ay1 <= ay_r[7:4];  ay0 <= ay_r[3:0];
+                    az3 <= az_r[15:12]; az2 <= az_r[11:8];  az1 <= az_r[7:4];  az0 <= az_r[3:0];
+                    gx3 <= gx_r[15:12]; gx2 <= gx_r[11:8];  gx1 <= gx_r[7:4];  gx0 <= gx_r[3:0];
+                    gy3 <= gy_r[15:12]; gy2 <= gy_r[11:8];  gy1 <= gy_r[7:4];  gy0 <= gy_r[3:0];
+                    gz3 <= gz_r[15:12]; gz2 <= gz_r[11:8];  gz1 <= gz_r[7:4];  gz0 <= gz_r[3:0];
+                    state <= ST_TX_A1;
                 end
 
-                //------------------------------------------------------------------
-                // label0
-                //------------------------------------------------------------------
-                ST_TX_L0: begin
-                    if (!tx_busy) begin
-                        tx_data  <= label0;
-                        tx_start <= 1'b1;
-                        state    <= ST_WAIT_L0;
-                    end
-                end
+                ST_TX_A1:  begin if (!tx_busy) begin tx_data <= "A"; tx_start <= 1'b1; state <= ST_W_A1; end end
+                ST_W_A1:   begin if (tx_done) state <= ST_TX_X1; end
+                ST_TX_X1:  begin if (!tx_busy) begin tx_data <= "X"; tx_start <= 1'b1; state <= ST_W_X1; end end
+                ST_W_X1:   begin if (tx_done) state <= ST_TX_EQ1; end
+                ST_TX_EQ1: begin if (!tx_busy) begin tx_data <= "="; tx_start <= 1'b1; state <= ST_W_EQ1; end end
+                ST_W_EQ1:  begin if (tx_done) state <= ST_TX_AX3; end
+                ST_TX_AX3: begin if (!tx_busy) begin tx_data <= hex_to_ascii(ax3); tx_start <= 1'b1; state <= ST_W_AX3; end end
+                ST_W_AX3:  begin if (tx_done) state <= ST_TX_AX2; end
+                ST_TX_AX2: begin if (!tx_busy) begin tx_data <= hex_to_ascii(ax2); tx_start <= 1'b1; state <= ST_W_AX2; end end
+                ST_W_AX2:  begin if (tx_done) state <= ST_TX_AX1; end
+                ST_TX_AX1: begin if (!tx_busy) begin tx_data <= hex_to_ascii(ax1); tx_start <= 1'b1; state <= ST_W_AX1; end end
+                ST_W_AX1:  begin if (tx_done) state <= ST_TX_AX0; end
+                ST_TX_AX0: begin if (!tx_busy) begin tx_data <= hex_to_ascii(ax0); tx_start <= 1'b1; state <= ST_W_AX0; end end
+                ST_W_AX0:  begin if (tx_done) state <= ST_TX_SP1; end
+                ST_TX_SP1: begin if (!tx_busy) begin tx_data <= " "; tx_start <= 1'b1; state <= ST_W_SP1; end end
+                ST_W_SP1:  begin if (tx_done) state <= ST_TX_A2; end
 
-                ST_WAIT_L0: begin
-                    if (tx_done)
-                        state <= ST_TX_L1;
-                end
+                ST_TX_A2:  begin if (!tx_busy) begin tx_data <= "A"; tx_start <= 1'b1; state <= ST_W_A2; end end
+                ST_W_A2:   begin if (tx_done) state <= ST_TX_Y1; end
+                ST_TX_Y1:  begin if (!tx_busy) begin tx_data <= "Y"; tx_start <= 1'b1; state <= ST_W_Y1; end end
+                ST_W_Y1:   begin if (tx_done) state <= ST_TX_EQ2; end
+                ST_TX_EQ2: begin if (!tx_busy) begin tx_data <= "="; tx_start <= 1'b1; state <= ST_W_EQ2; end end
+                ST_W_EQ2:  begin if (tx_done) state <= ST_TX_AY3; end
+                ST_TX_AY3: begin if (!tx_busy) begin tx_data <= hex_to_ascii(ay3); tx_start <= 1'b1; state <= ST_W_AY3; end end
+                ST_W_AY3:  begin if (tx_done) state <= ST_TX_AY2; end
+                ST_TX_AY2: begin if (!tx_busy) begin tx_data <= hex_to_ascii(ay2); tx_start <= 1'b1; state <= ST_W_AY2; end end
+                ST_W_AY2:  begin if (tx_done) state <= ST_TX_AY1; end
+                ST_TX_AY1: begin if (!tx_busy) begin tx_data <= hex_to_ascii(ay1); tx_start <= 1'b1; state <= ST_W_AY1; end end
+                ST_W_AY1:  begin if (tx_done) state <= ST_TX_AY0; end
+                ST_TX_AY0: begin if (!tx_busy) begin tx_data <= hex_to_ascii(ay0); tx_start <= 1'b1; state <= ST_W_AY0; end end
+                ST_W_AY0:  begin if (tx_done) state <= ST_TX_SP2; end
+                ST_TX_SP2: begin if (!tx_busy) begin tx_data <= " "; tx_start <= 1'b1; state <= ST_W_SP2; end end
+                ST_W_SP2:  begin if (tx_done) state <= ST_TX_A3; end
 
-                //------------------------------------------------------------------
-                // label1
-                //------------------------------------------------------------------
-                ST_TX_L1: begin
-                    if (!tx_busy) begin
-                        tx_data  <= label1;
-                        tx_start <= 1'b1;
-                        state    <= ST_WAIT_L1;
-                    end
-                end
+                ST_TX_A3:  begin if (!tx_busy) begin tx_data <= "A"; tx_start <= 1'b1; state <= ST_W_A3; end end
+                ST_W_A3:   begin if (tx_done) state <= ST_TX_Z1; end
+                ST_TX_Z1:  begin if (!tx_busy) begin tx_data <= "Z"; tx_start <= 1'b1; state <= ST_W_Z1; end end
+                ST_W_Z1:   begin if (tx_done) state <= ST_TX_EQ3; end
+                ST_TX_EQ3: begin if (!tx_busy) begin tx_data <= "="; tx_start <= 1'b1; state <= ST_W_EQ3; end end
+                ST_W_EQ3:  begin if (tx_done) state <= ST_TX_AZ3; end
+                ST_TX_AZ3: begin if (!tx_busy) begin tx_data <= hex_to_ascii(az3); tx_start <= 1'b1; state <= ST_W_AZ3; end end
+                ST_W_AZ3:  begin if (tx_done) state <= ST_TX_AZ2; end
+                ST_TX_AZ2: begin if (!tx_busy) begin tx_data <= hex_to_ascii(az2); tx_start <= 1'b1; state <= ST_W_AZ2; end end
+                ST_W_AZ2:  begin if (tx_done) state <= ST_TX_AZ1; end
+                ST_TX_AZ1: begin if (!tx_busy) begin tx_data <= hex_to_ascii(az1); tx_start <= 1'b1; state <= ST_W_AZ1; end end
+                ST_W_AZ1:  begin if (tx_done) state <= ST_TX_AZ0; end
+                ST_TX_AZ0: begin if (!tx_busy) begin tx_data <= hex_to_ascii(az0); tx_start <= 1'b1; state <= ST_W_AZ0; end end
+                ST_W_AZ0:  begin if (tx_done) state <= ST_TX_SP3; end
+                ST_TX_SP3: begin if (!tx_busy) begin tx_data <= " "; tx_start <= 1'b1; state <= ST_W_SP3; end end
+                ST_W_SP3:  begin if (tx_done) state <= ST_TX_G1; end
 
-                ST_WAIT_L1: begin
-                    if (tx_done)
-                        state <= ST_TX_EQ;
-                end
+                ST_TX_G1:  begin if (!tx_busy) begin tx_data <= "G"; tx_start <= 1'b1; state <= ST_W_G1; end end
+                ST_W_G1:   begin if (tx_done) state <= ST_TX_X2; end
+                ST_TX_X2:  begin if (!tx_busy) begin tx_data <= "X"; tx_start <= 1'b1; state <= ST_W_X2; end end
+                ST_W_X2:   begin if (tx_done) state <= ST_TX_EQ4; end
+                ST_TX_EQ4: begin if (!tx_busy) begin tx_data <= "="; tx_start <= 1'b1; state <= ST_W_EQ4; end end
+                ST_W_EQ4:  begin if (tx_done) state <= ST_TX_GX3; end
+                ST_TX_GX3: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gx3); tx_start <= 1'b1; state <= ST_W_GX3; end end
+                ST_W_GX3:  begin if (tx_done) state <= ST_TX_GX2; end
+                ST_TX_GX2: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gx2); tx_start <= 1'b1; state <= ST_W_GX2; end end
+                ST_W_GX2:  begin if (tx_done) state <= ST_TX_GX1; end
+                ST_TX_GX1: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gx1); tx_start <= 1'b1; state <= ST_W_GX1; end end
+                ST_W_GX1:  begin if (tx_done) state <= ST_TX_GX0; end
+                ST_TX_GX0: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gx0); tx_start <= 1'b1; state <= ST_W_GX0; end end
+                ST_W_GX0:  begin if (tx_done) state <= ST_TX_SP4; end
+                ST_TX_SP4: begin if (!tx_busy) begin tx_data <= " "; tx_start <= 1'b1; state <= ST_W_SP4; end end
+                ST_W_SP4:  begin if (tx_done) state <= ST_TX_G2; end
 
-                //------------------------------------------------------------------
-                // '='
-                //------------------------------------------------------------------
-                ST_TX_EQ: begin
-                    if (!tx_busy) begin
-                        tx_data  <= "=";
-                        tx_start <= 1'b1;
-                        state    <= ST_WAIT_EQ;
-                    end
-                end
+                ST_TX_G2:  begin if (!tx_busy) begin tx_data <= "G"; tx_start <= 1'b1; state <= ST_W_G2; end end
+                ST_W_G2:   begin if (tx_done) state <= ST_TX_Y2; end
+                ST_TX_Y2:  begin if (!tx_busy) begin tx_data <= "Y"; tx_start <= 1'b1; state <= ST_W_Y2; end end
+                ST_W_Y2:   begin if (tx_done) state <= ST_TX_EQ5; end
+                ST_TX_EQ5: begin if (!tx_busy) begin tx_data <= "="; tx_start <= 1'b1; state <= ST_W_EQ5; end end
+                ST_W_EQ5:  begin if (tx_done) state <= ST_TX_GY3; end
+                ST_TX_GY3: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gy3); tx_start <= 1'b1; state <= ST_W_GY3; end end
+                ST_W_GY3:  begin if (tx_done) state <= ST_TX_GY2; end
+                ST_TX_GY2: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gy2); tx_start <= 1'b1; state <= ST_W_GY2; end end
+                ST_W_GY2:  begin if (tx_done) state <= ST_TX_GY1; end
+                ST_TX_GY1: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gy1); tx_start <= 1'b1; state <= ST_W_GY1; end end
+                ST_W_GY1:  begin if (tx_done) state <= ST_TX_GY0; end
+                ST_TX_GY0: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gy0); tx_start <= 1'b1; state <= ST_W_GY0; end end
+                ST_W_GY0:  begin if (tx_done) state <= ST_TX_SP5; end
+                ST_TX_SP5: begin if (!tx_busy) begin tx_data <= " "; tx_start <= 1'b1; state <= ST_W_SP5; end end
+                ST_W_SP5:  begin if (tx_done) state <= ST_TX_G3; end
 
-                ST_WAIT_EQ: begin
-                    if (tx_done)
-                        state <= ST_TX_H3;
-                end
+                ST_TX_G3:  begin if (!tx_busy) begin tx_data <= "G"; tx_start <= 1'b1; state <= ST_W_G3; end end
+                ST_W_G3:   begin if (tx_done) state <= ST_TX_Z2; end
+                ST_TX_Z2:  begin if (!tx_busy) begin tx_data <= "Z"; tx_start <= 1'b1; state <= ST_W_Z2; end end
+                ST_W_Z2:   begin if (tx_done) state <= ST_TX_EQ6; end
+                ST_TX_EQ6: begin if (!tx_busy) begin tx_data <= "="; tx_start <= 1'b1; state <= ST_W_EQ6; end end
+                ST_W_EQ6:  begin if (tx_done) state <= ST_TX_GZ3; end
+                ST_TX_GZ3: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gz3); tx_start <= 1'b1; state <= ST_W_GZ3; end end
+                ST_W_GZ3:  begin if (tx_done) state <= ST_TX_GZ2; end
+                ST_TX_GZ2: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gz2); tx_start <= 1'b1; state <= ST_W_GZ2; end end
+                ST_W_GZ2:  begin if (tx_done) state <= ST_TX_GZ1; end
+                ST_TX_GZ1: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gz1); tx_start <= 1'b1; state <= ST_W_GZ1; end end
+                ST_W_GZ1:  begin if (tx_done) state <= ST_TX_GZ0; end
+                ST_TX_GZ0: begin if (!tx_busy) begin tx_data <= hex_to_ascii(gz0); tx_start <= 1'b1; state <= ST_W_GZ0; end end
+                ST_W_GZ0:  begin if (tx_done) state <= ST_TX_CR; end
 
-                //------------------------------------------------------------------
-                // hex3
-                //------------------------------------------------------------------
-                ST_TX_H3: begin
-                    if (!tx_busy) begin
-                        tx_data  <= hex_to_ascii(hex3);
-                        tx_start <= 1'b1;
-                        state    <= ST_WAIT_H3;
-                    end
-                end
-
-                ST_WAIT_H3: begin
-                    if (tx_done)
-                        state <= ST_TX_H2;
-                end
-
-                //------------------------------------------------------------------
-                // hex2
-                //------------------------------------------------------------------
-                ST_TX_H2: begin
-                    if (!tx_busy) begin
-                        tx_data  <= hex_to_ascii(hex2);
-                        tx_start <= 1'b1;
-                        state    <= ST_WAIT_H2;
-                    end
-                end
-
-                ST_WAIT_H2: begin
-                    if (tx_done)
-                        state <= ST_TX_H1;
-                end
-
-                //------------------------------------------------------------------
-                // hex1
-                //------------------------------------------------------------------
-                ST_TX_H1: begin
-                    if (!tx_busy) begin
-                        tx_data  <= hex_to_ascii(hex1);
-                        tx_start <= 1'b1;
-                        state    <= ST_WAIT_H1;
-                    end
-                end
-
-                ST_WAIT_H1: begin
-                    if (tx_done)
-                        state <= ST_TX_H0;
-                end
-
-                //------------------------------------------------------------------
-                // hex0
-                //------------------------------------------------------------------
-                ST_TX_H0: begin
-                    if (!tx_busy) begin
-                        tx_data  <= hex_to_ascii(hex0);
-                        tx_start <= 1'b1;
-                        state    <= ST_WAIT_H0;
-                    end
-                end
-
-                ST_WAIT_H0: begin
-                    if (tx_done)
-                        state <= ST_TX_SEP;
-                end
-
-                //------------------------------------------------------------------
-                // 센서 사이 공백 또는 줄바꿈
-                //------------------------------------------------------------------
-                ST_TX_SEP: begin
-                    if (!tx_busy) begin
-                        if (sensor_idx == 3'd5) begin
-                            state <= ST_TX_CR;
-                        end
-                        else begin
-                            tx_data  <= " ";
-                            tx_start <= 1'b1;
-                            state    <= ST_WAIT_SEP;
-                        end
-                    end
-                end
-
-                ST_WAIT_SEP: begin
-                    if (tx_done)
-                        state <= ST_NEXT_SENSOR;
-                end
-
-                //------------------------------------------------------------------
-                // 다음 센서 선택
-                //------------------------------------------------------------------
-                ST_NEXT_SENSOR: begin
-                    sensor_idx <= sensor_idx + 3'd1;
-                    state      <= ST_SELECT;
-                end
-
-                //------------------------------------------------------------------
-                // CR
-                //------------------------------------------------------------------
-                ST_TX_CR: begin
-                    if (!tx_busy) begin
-                        tx_data  <= 8'h0D;
-                        tx_start <= 1'b1;
-                        state    <= ST_WAIT_CR;
-                    end
-                end
-
-                ST_WAIT_CR: begin
-                    if (tx_done)
-                        state <= ST_TX_LF;
-                end
-
-                //------------------------------------------------------------------
-                // LF
-                //------------------------------------------------------------------
-                ST_TX_LF: begin
-                    if (!tx_busy) begin
-                        tx_data  <= 8'h0A;
-                        tx_start <= 1'b1;
-                        state    <= ST_WAIT_LF;
-                    end
-                end
-
-                ST_WAIT_LF: begin
-                    if (tx_done)
-                        state <= ST_IDLE;
-                end
+                ST_TX_CR:  begin if (!tx_busy) begin tx_data <= 8'h0D; tx_start <= 1'b1; state <= ST_W_CR; end end
+                ST_W_CR:   begin if (tx_done) state <= ST_TX_LF; end
+                ST_TX_LF:  begin if (!tx_busy) begin tx_data <= 8'h0A; tx_start <= 1'b1; state <= ST_W_LF; end end
+                ST_W_LF:   begin if (tx_done) state <= ST_IDLE; end
 
                 default: begin
                     state <= ST_IDLE;

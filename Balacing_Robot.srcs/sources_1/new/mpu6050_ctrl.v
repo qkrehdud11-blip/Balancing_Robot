@@ -1,426 +1,281 @@
 `timescale 1ns / 1ps
-//================================================================================
+//==============================================================================
 // mpu6050_ctrl
-// - MPU6050 초기화 + 가속도 3축 + 자이로 3축 읽기 상위 FSM
+//------------------------------------------------------------------------------
+// 목적
+// - MPU6050 초기화 (PWR_MGMT_1 = 0x00)
+// - ACCEL_XOUT_H부터 14바이트 burst read
+// - AX, AY, AZ, GX, GY, GZ raw 6축 출력
 //
-// 초기화
-//   PWR_MGMT_1   = 0x00
-//   ACCEL_CONFIG = 0x00  (±2g)
-//   GYRO_CONFIG  = 0x00  (±250 dps)
-//
-// 측정
-//   AX_H -> AX_L -> AY_H -> AY_L -> AZ_H -> AZ_L
-//   -> GX_H -> GX_L -> GY_H -> GY_L -> GZ_H -> GZ_L 반복
-//================================================================================
+// 핵심 수정
+// 1) start_req는 tick 기준 pulse로 생성
+// 2) i2c_master의 done이 짧은 pulse여도 놓치지 않도록 done_latched 사용
+// 3) rx_buf는 byte0가 [7:0]에 저장되는 LSB-first packing 기준으로 파싱
+//==============================================================================
 
 module mpu6050_ctrl
 (
-    input  wire              clk,
-    input  wire              rst_n,
-    input  wire              tick,
+    input  wire         clk,
+    input  wire         rst_n,
+    input  wire         tick,
 
-    input  wire              busy,
-    input  wire              done,
-    input  wire              ack_ok,
-    input  wire [7:0]        rx_data,
+    // i2c_master status
+    input  wire         busy,
+    input  wire         done,
+    input  wire         ack_ok,
+    input  wire [2:0]   err_code,
+    input  wire [127:0] rx_buf,
+    input  wire [7:0]   rx_count,
 
-    output reg               start_req,
-    output reg               rw,
-    output reg  [7:0]        reg_addr,
-    output reg  [7:0]        tx_data,
+    // i2c_master control
+    output reg          start_req,
+    output reg          rw,
+    output reg [7:0]    reg_addr,
+    output reg [7:0]    tx_data,
+    output reg [7:0]    burst_len,
 
-    output reg signed [15:0] accel_x,
-    output reg signed [15:0] accel_y,
-    output reg signed [15:0] accel_z,
+    // status
+    output reg          init_done,
+    output reg          data_valid,
+    output reg [2:0]    last_err,
 
-    output reg signed [15:0] gyro_x,
-    output reg signed [15:0] gyro_y,
-    output reg signed [15:0] gyro_z,
-
-    output reg               init_done,
-    output reg               data_valid
+    // raw sensor outputs
+    output reg signed [15:0] ax,
+    output reg signed [15:0] ay,
+    output reg signed [15:0] az,
+    output reg signed [15:0] gx,
+    output reg signed [15:0] gy,
+    output reg signed [15:0] gz
 );
 
-//================================================================================
-// Register Address
-//================================================================================
-localparam [7:0] REG_PWR_MGMT_1   = 8'h6B;
-localparam [7:0] REG_GYRO_CONFIG  = 8'h1B;
-localparam [7:0] REG_ACCEL_CONFIG = 8'h1C;
+    localparam [7:0] REG_PWR_MGMT_1   = 8'h6B;
+    localparam [7:0] REG_ACCEL_XOUT_H = 8'h3B;
 
-localparam [7:0] REG_ACCEL_XOUT_H = 8'h3B;
-localparam [7:0] REG_ACCEL_XOUT_L = 8'h3C;
-localparam [7:0] REG_ACCEL_YOUT_H = 8'h3D;
-localparam [7:0] REG_ACCEL_YOUT_L = 8'h3E;
-localparam [7:0] REG_ACCEL_ZOUT_H = 8'h3F;
-localparam [7:0] REG_ACCEL_ZOUT_L = 8'h40;
+    localparam [3:0]
+        ST_RESET_WAIT      = 4'd0,
+        ST_INIT_REQ        = 4'd1,
+        ST_INIT_WAIT_BUSY  = 4'd2,
+        ST_INIT_WAIT_DONE  = 4'd3,
+        ST_INIT_CHECK      = 4'd4,
+        ST_WAIT_PERIOD     = 4'd5,
+        ST_READ_REQ        = 4'd6,
+        ST_READ_WAIT_BUSY  = 4'd7,
+        ST_READ_WAIT_DONE  = 4'd8,
+        ST_READ_CHECK      = 4'd9;
 
-localparam [7:0] REG_GYRO_XOUT_H  = 8'h43;
-localparam [7:0] REG_GYRO_XOUT_L  = 8'h44;
-localparam [7:0] REG_GYRO_YOUT_H  = 8'h45;
-localparam [7:0] REG_GYRO_YOUT_L  = 8'h46;
-localparam [7:0] REG_GYRO_ZOUT_H  = 8'h47;
-localparam [7:0] REG_GYRO_ZOUT_L  = 8'h48;
+    reg [3:0]  state;
+    reg [15:0] wait_cnt;
 
-//================================================================================
-// Init Value
-//================================================================================
-localparam [7:0] VAL_PWR_MGMT_1   = 8'h00;
-localparam [7:0] VAL_ACCEL_CONFIG = 8'h00;
-localparam [7:0] VAL_GYRO_CONFIG  = 8'h00;
+    // i2c_master의 done pulse를 놓치지 않기 위한 latch
+    reg done_latched;
 
-//================================================================================
-// State Definition
-//================================================================================
-localparam [5:0] ST_IDLE         = 6'd0;
-localparam [5:0] ST_WR_REQ       = 6'd1;
-localparam [5:0] ST_WR_WAIT_BUSY = 6'd2;
-localparam [5:0] ST_WR_WAIT_DONE = 6'd3;
-localparam [5:0] ST_WR_CHECK     = 6'd4;
-localparam [5:0] ST_RD_REQ       = 6'd5;
-localparam [5:0] ST_RD_WAIT_BUSY = 6'd6;
-localparam [5:0] ST_RD_WAIT_DONE = 6'd7;
-localparam [5:0] ST_RD_LATCH     = 6'd8;
-localparam [5:0] ST_INIT_PWR     = 6'd9;
-localparam [5:0] ST_INIT_ACCEL   = 6'd10;
-localparam [5:0] ST_INIT_GYRO    = 6'd11;
-localparam [5:0] ST_INIT_DONE    = 6'd12;
-localparam [5:0] ST_READ_AX_H    = 6'd13;
-localparam [5:0] ST_READ_AX_L    = 6'd14;
-localparam [5:0] ST_READ_AY_H    = 6'd15;
-localparam [5:0] ST_READ_AY_L    = 6'd16;
-localparam [5:0] ST_READ_AZ_H    = 6'd17;
-localparam [5:0] ST_READ_AZ_L    = 6'd18;
-localparam [5:0] ST_UPDATE_DATA  = 6'd19;
-localparam [5:0] ST_READ_GX_H    = 6'd20;
-localparam [5:0] ST_READ_GX_L    = 6'd21;
-localparam [5:0] ST_READ_GY_H    = 6'd22;
-localparam [5:0] ST_READ_GY_L    = 6'd23;
-localparam [5:0] ST_READ_GZ_H    = 6'd24;
-localparam [5:0] ST_READ_GZ_L    = 6'd25;
-localparam [5:0] ST_FAIL         = 6'd26;
+    // 10us tick 기준
+    // 5000 -> 50ms
+    localparam [15:0] RESET_WAIT_TICKS  = 16'd5000;
 
-//================================================================================
-// Internal Register
-//================================================================================
-reg [5:0] state;
-reg [5:0] next_state_after_write;
-reg [5:0] next_state_after_read;
+    // 10us tick 기준
+    // 1000 -> 10ms
+    localparam [15:0] READ_PERIOD_TICKS = 16'd1000;
 
-reg [7:0] ax_h;
-reg [7:0] ax_l;
-reg [7:0] ay_h;
-reg [7:0] ay_l;
-reg [7:0] az_h;
-reg [7:0] az_l;
-
-reg [7:0] gx_h;
-reg [7:0] gx_l;
-reg [7:0] gy_h;
-reg [7:0] gy_l;
-reg [7:0] gz_h;
-reg [7:0] gz_l;
-
-//================================================================================
-// FSM
-//================================================================================
-always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        state                  <= ST_IDLE;
-        next_state_after_write <= ST_IDLE;
-        next_state_after_read  <= ST_IDLE;
-
-        start_req              <= 1'b0;
-        rw                     <= 1'b1;
-        reg_addr               <= 8'd0;
-        tx_data                <= 8'd0;
-
-        accel_x                <= 16'sd0;
-        accel_y                <= 16'sd0;
-        accel_z                <= 16'sd0;
-        gyro_x                 <= 16'sd0;
-        gyro_y                 <= 16'sd0;
-        gyro_z                 <= 16'sd0;
-
-        ax_h                   <= 8'd0;
-        ax_l                   <= 8'd0;
-        ay_h                   <= 8'd0;
-        ay_l                   <= 8'd0;
-        az_h                   <= 8'd0;
-        az_l                   <= 8'd0;
-
-        gx_h                   <= 8'd0;
-        gx_l                   <= 8'd0;
-        gy_h                   <= 8'd0;
-        gy_l                   <= 8'd0;
-        gz_h                   <= 8'd0;
-        gz_l                   <= 8'd0;
-
-        init_done              <= 1'b0;
-        data_valid             <= 1'b0;
-    end
-    else begin
-        if (tick) begin
-            case (state)
-                ST_IDLE: begin
-                    start_req  <= 1'b0;
-                    init_done  <= 1'b0;
-                    data_valid <= 1'b0;
-                    state      <= ST_INIT_PWR;
-                end
-
-                ST_INIT_PWR: begin
-                    rw                     <= 1'b0;
-                    reg_addr               <= REG_PWR_MGMT_1;
-                    tx_data                <= VAL_PWR_MGMT_1;
-                    next_state_after_write <= ST_INIT_ACCEL;
-                    state                  <= ST_WR_REQ;
-                end
-
-                ST_INIT_ACCEL: begin
-                    rw                     <= 1'b0;
-                    reg_addr               <= REG_ACCEL_CONFIG;
-                    tx_data                <= VAL_ACCEL_CONFIG;
-                    next_state_after_write <= ST_INIT_GYRO;
-                    state                  <= ST_WR_REQ;
-                end
-
-                ST_INIT_GYRO: begin
-                    rw                     <= 1'b0;
-                    reg_addr               <= REG_GYRO_CONFIG;
-                    tx_data                <= VAL_GYRO_CONFIG;
-                    next_state_after_write <= ST_INIT_DONE;
-                    state                  <= ST_WR_REQ;
-                end
-
-                ST_INIT_DONE: begin
-                    init_done  <= 1'b1;
-                    data_valid <= 1'b0;
-                    state      <= ST_READ_AX_H;
-                end
-
-                ST_WR_REQ: begin
-                    start_req <= 1'b1;
-                    state     <= ST_WR_WAIT_BUSY;
-                end
-
-                ST_WR_WAIT_BUSY: begin
-                    if (busy) begin
-                        start_req <= 1'b0;
-                        state     <= ST_WR_WAIT_DONE;
-                    end
-                end
-
-                ST_WR_WAIT_DONE: begin
-                    if (done) begin
-                        state <= ST_WR_CHECK;
-                    end
-                end
-
-                ST_WR_CHECK: begin
-                    if (ack_ok)
-                        state <= next_state_after_write;
-                    else
-                        state <= ST_FAIL;
-                end
-
-                ST_READ_AX_H: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_ACCEL_XOUT_H;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_AX_L;
-                    state                 <= ST_RD_REQ;
-                    data_valid            <= 1'b0;
-                end
-
-                ST_READ_AX_L: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_ACCEL_XOUT_L;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_AY_H;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_READ_AY_H: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_ACCEL_YOUT_H;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_AY_L;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_READ_AY_L: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_ACCEL_YOUT_L;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_AZ_H;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_READ_AZ_H: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_ACCEL_ZOUT_H;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_AZ_L;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_READ_AZ_L: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_ACCEL_ZOUT_L;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_GX_H;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_READ_GX_H: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_GYRO_XOUT_H;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_GX_L;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_READ_GX_L: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_GYRO_XOUT_L;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_GY_H;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_READ_GY_H: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_GYRO_YOUT_H;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_GY_L;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_READ_GY_L: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_GYRO_YOUT_L;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_GZ_H;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_READ_GZ_H: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_GYRO_ZOUT_H;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_READ_GZ_L;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_READ_GZ_L: begin
-                    rw                    <= 1'b1;
-                    reg_addr              <= REG_GYRO_ZOUT_L;
-                    tx_data               <= 8'h00;
-                    next_state_after_read <= ST_UPDATE_DATA;
-                    state                 <= ST_RD_REQ;
-                end
-
-                ST_RD_REQ: begin
-                    start_req <= 1'b1;
-                    state     <= ST_RD_WAIT_BUSY;
-                end
-
-                ST_RD_WAIT_BUSY: begin
-                    if (busy) begin
-                        start_req <= 1'b0;
-                        state     <= ST_RD_WAIT_DONE;
-                    end
-                end
-
-                ST_RD_WAIT_DONE: begin
-                    if (done) begin
-                        state <= ST_RD_LATCH;
-                    end
-                end
-
-                ST_RD_LATCH: begin
-                    if (ack_ok) begin
-                        case (reg_addr)
-                            REG_ACCEL_XOUT_H: ax_h <= rx_data;
-                            REG_ACCEL_XOUT_L: ax_l <= rx_data;
-                            REG_ACCEL_YOUT_H: ay_h <= rx_data;
-                            REG_ACCEL_YOUT_L: ay_l <= rx_data;
-                            REG_ACCEL_ZOUT_H: az_h <= rx_data;
-                            REG_ACCEL_ZOUT_L: az_l <= rx_data;
-
-                            REG_GYRO_XOUT_H : gx_h <= rx_data;
-                            REG_GYRO_XOUT_L : gx_l <= rx_data;
-                            REG_GYRO_YOUT_H : gy_h <= rx_data;
-                            REG_GYRO_YOUT_L : gy_l <= rx_data;
-                            REG_GYRO_ZOUT_H : gz_h <= rx_data;
-                            REG_GYRO_ZOUT_L : gz_l <= rx_data;
-                            default: ;
-                        endcase
-                        state <= next_state_after_read;
-                    end
-                    else begin
-                        state <= ST_FAIL;
-                    end
-                end
-
-                ST_UPDATE_DATA: begin
-                    accel_x    <= {ax_h, ax_l};
-                    accel_y    <= {ay_h, ay_l};
-                    accel_z    <= {az_h, az_l};
-
-                    gyro_x     <= {gx_h, gx_l};
-                    gyro_y     <= {gy_h, gy_l};
-                    gyro_z     <= {gz_h, gz_l};
-
-                    data_valid <= 1'b1;
-                    state      <= ST_READ_AX_H;
-                end
-
-                ST_FAIL: begin
-                    start_req  <= 1'b0;
-                    init_done  <= 1'b0;
-                    data_valid <= 1'b0;
-                    state      <= ST_INIT_PWR;
-                end
-
-                default: begin
-                    state                  <= ST_IDLE;
-                    next_state_after_write <= ST_IDLE;
-                    next_state_after_read  <= ST_IDLE;
-
-                    start_req              <= 1'b0;
-                    rw                     <= 1'b1;
-                    reg_addr               <= 8'd0;
-                    tx_data                <= 8'd0;
-
-                    accel_x                <= 16'sd0;
-                    accel_y                <= 16'sd0;
-                    accel_z                <= 16'sd0;
-                    gyro_x                 <= 16'sd0;
-                    gyro_y                 <= 16'sd0;
-                    gyro_z                 <= 16'sd0;
-
-                    ax_h                   <= 8'd0;
-                    ax_l                   <= 8'd0;
-                    ay_h                   <= 8'd0;
-                    ay_l                   <= 8'd0;
-                    az_h                   <= 8'd0;
-                    az_l                   <= 8'd0;
-
-                    gx_h                   <= 8'd0;
-                    gx_l                   <= 8'd0;
-                    gy_h                   <= 8'd0;
-                    gy_l                   <= 8'd0;
-                    gz_h                   <= 8'd0;
-                    gz_l                   <= 8'd0;
-
-                    init_done              <= 1'b0;
-                    data_valid             <= 1'b0;
-                end
-            endcase
+    //--------------------------------------------------------------------------
+    // done pulse latch
+    // - i2c_master의 done이 짧게 올라와도
+    //   WAIT_DONE 상태에서 확실히 인식할 수 있도록 보관한다.
+    //--------------------------------------------------------------------------
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            done_latched <= 1'b0;
+        end
+        else begin
+            if (done) begin
+                done_latched <= 1'b1;
+            end
+            else if ((state != ST_INIT_WAIT_DONE) && (state != ST_READ_WAIT_DONE)) begin
+                done_latched <= 1'b0;
+            end
         end
     end
-end
+
+    //--------------------------------------------------------------------------
+    // main FSM
+    //--------------------------------------------------------------------------
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state      <= ST_RESET_WAIT;
+            wait_cnt   <= 16'd0;
+
+            start_req  <= 1'b0;
+            rw         <= 1'b0;
+            reg_addr   <= 8'd0;
+            tx_data    <= 8'd0;
+            burst_len  <= 8'd0;
+
+            init_done  <= 1'b0;
+            data_valid <= 1'b0;
+            last_err   <= 3'd0;
+
+            ax         <= 16'sd0;
+            ay         <= 16'sd0;
+            az         <= 16'sd0;
+            gx         <= 16'sd0;
+            gy         <= 16'sd0;
+            gz         <= 16'sd0;
+        end
+        else begin
+            // 기본값
+            start_req  <= 1'b0;
+            data_valid <= 1'b0;
+
+            if (tick) begin
+                case (state)
+
+                    //==========================================================
+                    // 전원 안정화 대기
+                    //==========================================================
+                    ST_RESET_WAIT: begin
+                        init_done <= 1'b0;
+
+                        if (wait_cnt < RESET_WAIT_TICKS) begin
+                            wait_cnt <= wait_cnt + 16'd1;
+                        end
+                        else begin
+                            wait_cnt <= 16'd0;
+                            state    <= ST_INIT_REQ;
+                        end
+                    end
+
+                    //==========================================================
+                    // INIT WRITE 요청
+                    //==========================================================
+                    ST_INIT_REQ: begin
+                        rw        <= 1'b0;          // write
+                        reg_addr  <= REG_PWR_MGMT_1;
+                        tx_data   <= 8'h00;         // sleep 해제
+                        burst_len <= 8'd0;
+
+                        // i2c_master에 transaction 시작 요청
+                        start_req <= 1'b1;
+                        state     <= ST_INIT_WAIT_BUSY;
+                    end
+
+                    //==========================================================
+                    // master busy 진입 대기
+                    //==========================================================
+                    ST_INIT_WAIT_BUSY: begin
+                        if (busy)
+                            state <= ST_INIT_WAIT_DONE;
+                    end
+
+                    //==========================================================
+                    // init done latch 대기
+                    //==========================================================
+                    ST_INIT_WAIT_DONE: begin
+                        if (done_latched)
+                            state <= ST_INIT_CHECK;
+                    end
+
+                    //==========================================================
+                    // init 결과 확인
+                    //==========================================================
+                    ST_INIT_CHECK: begin
+                        if (ack_ok) begin
+                            init_done <= 1'b1;
+                            wait_cnt  <= 16'd0;
+                            state     <= ST_WAIT_PERIOD;
+                        end
+                        else begin
+                            init_done <= 1'b0;
+                            last_err  <= err_code;
+                            wait_cnt  <= 16'd0;
+                            state     <= ST_RESET_WAIT;
+                        end
+                    end
+
+                    //==========================================================
+                    // 다음 burst read까지 대기
+                    //==========================================================
+                    ST_WAIT_PERIOD: begin
+                        if (wait_cnt < READ_PERIOD_TICKS) begin
+                            wait_cnt <= wait_cnt + 16'd1;
+                        end
+                        else begin
+                            wait_cnt <= 16'd0;
+                            state    <= ST_READ_REQ;
+                        end
+                    end
+
+                    //==========================================================
+                    // BURST READ 요청
+                    //==========================================================
+                    ST_READ_REQ: begin
+                        rw        <= 1'b1;             // read
+                        reg_addr  <= REG_ACCEL_XOUT_H; // 0x3B부터
+                        tx_data   <= 8'h00;
+                        burst_len <= 8'd14;
+
+                        start_req <= 1'b1;
+                        state     <= ST_READ_WAIT_BUSY;
+                    end
+
+                    //==========================================================
+                    // read busy 진입 대기
+                    //==========================================================
+                    ST_READ_WAIT_BUSY: begin
+                        if (busy)
+                            state <= ST_READ_WAIT_DONE;
+                    end
+
+                    //==========================================================
+                    // read done latch 대기
+                    //==========================================================
+                    ST_READ_WAIT_DONE: begin
+                        if (done_latched)
+                            state <= ST_READ_CHECK;
+                    end
+
+                    //==========================================================
+                    // read 결과 확인 및 파싱
+                    //==========================================================
+                    ST_READ_CHECK: begin
+                        if (ack_ok && (rx_count == 8'd14)) begin
+                            // rx_buf packing
+                            // [7:0]    = byte0  = ACCEL_XOUT_H
+                            // [15:8]   = byte1  = ACCEL_XOUT_L
+                            // [23:16]  = byte2  = ACCEL_YOUT_H
+                            // [31:24]  = byte3  = ACCEL_YOUT_L
+                            // [39:32]  = byte4  = ACCEL_ZOUT_H
+                            // [47:40]  = byte5  = ACCEL_ZOUT_L
+                            // [55:48]  = byte6  = TEMP_OUT_H
+                            // [63:56]  = byte7  = TEMP_OUT_L
+                            // [71:64]  = byte8  = GYRO_XOUT_H
+                            // [79:72]  = byte9  = GYRO_XOUT_L
+                            // [87:80]  = byte10 = GYRO_YOUT_H
+                            // [95:88]  = byte11 = GYRO_YOUT_L
+                            // [103:96] = byte12 = GYRO_ZOUT_H
+                            // [111:104]= byte13 = GYRO_ZOUT_L
+                            ax <= {rx_buf[7:0],    rx_buf[15:8]};
+                            ay <= {rx_buf[23:16],  rx_buf[31:24]};
+                            az <= {rx_buf[39:32],  rx_buf[47:40]};
+                            gx <= {rx_buf[71:64],  rx_buf[79:72]};
+                            gy <= {rx_buf[87:80],  rx_buf[95:88]};
+                            gz <= {rx_buf[103:96], rx_buf[111:104]};
+
+                            data_valid <= 1'b1;
+                        end
+                        else begin
+                            last_err <= err_code;
+                        end
+
+                        wait_cnt <= 16'd0;
+                        state    <= ST_WAIT_PERIOD;
+                    end
+
+                    default: begin
+                        state <= ST_RESET_WAIT;
+                    end
+                endcase
+            end
+        end
+    end
 
 endmodule
