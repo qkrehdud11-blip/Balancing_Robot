@@ -88,8 +88,8 @@ set_property -dict { PACKAGE_PIN K2   IOSTANDARD LVCMOS33 } [get_ports {PWMB_out
 #set_property -dict { PACKAGE_PIN B16   IOSTANDARD LVCMOS33 } [get_ports {JB[3]}];#Sch name = JB4
 #set_property -dict { PACKAGE_PIN A15   IOSTANDARD LVCMOS33 } [get_ports {JB[4]}];#Sch name = JB7
 #set_property -dict { PACKAGE_PIN A17   IOSTANDARD LVCMOS33 } [get_ports {JB[5]}];#Sch name = JB8
-#set_property -dict { PACKAGE_PIN C15   IOSTANDARD LVCMOS33 } [get_ports {JB[6]}];#Sch name = JB9
-#set_property -dict { PACKAGE_PIN C16   IOSTANDARD LVCMOS33 } [get_ports {JB[7]}];#Sch name = JB10
+set_property -dict { PACKAGE_PIN C15   IOSTANDARD LVCMOS33 } [get_ports {rx_pin}];#Sch name = JB9
+set_property -dict { PACKAGE_PIN C16   IOSTANDARD LVCMOS33 } [get_ports {tx_pin}];#Sch name = JB10
 
 ##Pmod Header JC
 #set_property -dict { PACKAGE_PIN K17   IOSTANDARD LVCMOS33 } [get_ports {JC[0]}];#Sch name = JC1
