@@ -26,22 +26,19 @@ module pid
 (
     input  wire        clk,
     input  wire        rst_n,
-    input  wire        tick,                    // PID 업데이트 타이밍 (clk_divider tick)
+    input  wire        en,                      // PID 업데이트 트리거 (angle_valid & init_done & bias_done)
 
-    input  wire signed [15:0] angle_in,         // 현재 기울기 (MPU6050 raw 또는 변환값)
-    input  wire signed [15:0] setpoint,         // 목표 각도 (보통 16'd0)
+    input  wire signed [15:0] angle_in,         // 현재 기울기 (angle_calc 출력, 0.01° 단위)
+    input  wire signed [15:0] setpoint,         // 목표 각도 (보통 16'sd0 = 직립)
+
+    // 런타임 튜닝 이득값 (Q8: 실제값 × 256)
+    input  wire [15:0] kp,                      // Kp (e.g. 256 = 1.0)
+    input  wire [15:0] ki,                      // Ki (e.g. 26  ≈ 0.1)
+    input  wire [15:0] kd,                      // Kd (e.g. 512 = 2.0)
 
     output reg  [15:0] pwm_duty,                // PWM 듀티 (0 ~ MAX_DUTY)
     output reg         dir                      // 방향: 0 = 전진, 1 = 후진
 );
-
-//================================================================================
-// 파라미터: 이득값 (Q8 고정소수점: 실제값 * 256)
-// 튜닝 시 이 값만 수정
-//================================================================================
-parameter signed [15:0] KP         = 16'd256;  // Kp = 1.0
-parameter signed [15:0] KI         = 16'd26;   // Ki ≈ 0.1
-parameter signed [15:0] KD         = 16'd512;  // Kd = 2.0
 
 parameter [15:0] MAX_DUTY          = 16'd1000; // PWM 최대 듀티 (L298N에 맞게 조정)
 parameter signed [31:0] I_MAX      = 32'sd500000; // 적분 항 상한 (anti-windup)
@@ -70,9 +67,9 @@ assign d_error = error - prev_error;
 //================================================================================
 // PID 각 항 계산 (Q8 스케일)
 //================================================================================
-assign p_term  = KP * error;
-assign i_term  = integral;          // 이미 Ki가 곱해진 누적값
-assign d_term  = KD * d_error;
+assign p_term  = $signed(kp) * error;
+assign i_term  = integral;          // 이미 ki가 곱해진 누적값
+assign d_term  = $signed(kd) * d_error;
 
 assign pid_sum = p_term + i_term + d_term;
 
@@ -92,7 +89,7 @@ always @(posedge clk or negedge rst_n) begin
         dir        <= 1'b0;
     end
 
-    else if (tick) begin
+    else if (en) begin
         //----------------------------------------------------------------------
         // 1. 오차 계산
         //----------------------------------------------------------------------
@@ -102,12 +99,12 @@ always @(posedge clk or negedge rst_n) begin
         //----------------------------------------------------------------------
         // 2. 적분 누적 (anti-windup: 범위 초과 시 클램핑)
         //----------------------------------------------------------------------
-        if (integral + KI * error > I_MAX)
+        if (integral + $signed(ki) * error > I_MAX)
             integral <= I_MAX;
-        else if (integral + KI * error < I_MIN)
+        else if (integral + $signed(ki) * error < I_MIN)
             integral <= I_MIN;
         else
-            integral <= integral + KI * error;
+            integral <= integral + $signed(ki) * error;
 
         //----------------------------------------------------------------------
         // 3. PWM 듀티 및 방향 출력

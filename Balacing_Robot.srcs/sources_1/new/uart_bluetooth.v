@@ -129,7 +129,7 @@ module uart_tx (
                         tx_pin <= tx_buf[0];                // 0번비트 대입
                         if(bit_cnt != 7)begin
                             bit_cnt <= bit_cnt + 1;
-                            tx_buf <= tx_buf >> 1;
+                            tx_buf <= tx_buf >> 1;          // 이후 비트시프팅
                         
                         end else begin
                             state <= STOP;
