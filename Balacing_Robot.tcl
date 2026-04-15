@@ -23,10 +23,19 @@
 # 2. The following source(s) files that were local or imported into the original project.
 #    (Please see the '$orig_proj_dir' and '$origin_dir' variable setting below at the start of the script)
 #
-#    "/home/appletea/workspace_onedevice_2/Project_5/Balacing_Robot/Balacing_Robot.srcs/utils_1/imports/synth_1/pid.dcp"
+#    "/home/parkdoyoung/workspace_ondevice_2/Project_5_Balancing-Robot/Balacing_Robot/Balacing_Robot.srcs/utils_1/imports/synth_1/top.dcp"
 #
 # 3. The following remote source files that were added to the original project:-
 #
+#    "/home/parkdoyoung/workspace_ondevice_2/Project_5_Balancing-Robot/Balacing_Robot.srcs/sources_1/new/clk_divider.v"
+#    "/home/parkdoyoung/workspace_ondevice_2/Project_5_Balancing-Robot/Balacing_Robot.srcs/sources_1/new/i2c_master.v"
+#    "/home/parkdoyoung/workspace_ondevice_2/Project_5_Balancing-Robot/Balacing_Robot.srcs/sources_1/new/mpu6050_ctrl.v"
+#    "/home/parkdoyoung/workspace_ondevice_2/Project_5_Balancing-Robot/Balacing_Robot.srcs/sources_1/new/mpu6050_debug_uart.v"
+#    "/home/parkdoyoung/workspace_ondevice_2/Project_5_Balancing-Robot/Balacing_Robot.srcs/sources_1/new/uart_tx.v"
+#    "/home/parkdoyoung/workspace_ondevice_2/Project_5_Balancing-Robot/Balacing_Robot.srcs/sources_1/new/top.v"
+#    "/home/parkdoyoung/workspace_ondevice_2/Project_5_Balancing-Robot/Balacing_Robot.srcs/sources_1/new/l298n.v"
+#    "/home/parkdoyoung/workspace_ondevice_2/Project_5_Balancing-Robot/Balacing_Robot.srcs/sources_1/new/angle_calc.v"
+#    "/home/parkdoyoung/workspace_ondevice_2/Project_5_Balancing-Robot/Balacing_Robot.srcs/constrs_1/imports/fpga/Basys-3-Master.xdc"
 #    "/home/appletea/workspace_onedevice_2/Project_5/Balacing_Robot.srcs/sources_1/new/uart_bluetooth.v"
 #    "/home/appletea/workspace_onedevice_2/Project_5/Balacing_Robot.srcs/sources_1/new/TB6612FNG.v"
 #    "/home/appletea/workspace_onedevice_2/Project_5/Balacing_Robot.srcs/sources_1/new/JGB37_520.v"
@@ -38,7 +47,7 @@
 proc checkRequiredFiles { origin_dir} {
   set status true
   set files [list \
- "[file normalize "$origin_dir/Balacing_Robot/Balacing_Robot.srcs/utils_1/imports/synth_1/pid.dcp"]"\
+ "[file normalize "$origin_dir/Balacing_Robot/Balacing_Robot.srcs/utils_1/imports/synth_1/top.dcp"]"\
   ]
   foreach ifile $files {
     if { ![file isfile $ifile] } {
@@ -48,6 +57,14 @@ proc checkRequiredFiles { origin_dir} {
   }
 
   set files [list \
+ "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/clk_divider.v"]"\
+ "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/i2c_master.v"]"\
+ "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/mpu6050_ctrl.v"]"\
+ "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/mpu6050_debug_uart.v"]"\
+ "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/uart_tx.v"]"\
+ "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/top.v"]"\
+ "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/l298n.v"]"\
+ "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/angle_calc.v"]"\
  "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/uart_bluetooth.v"]"\
  "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/TB6612FNG.v"]"\
  "[file normalize "$origin_dir/Balacing_Robot.srcs/sources_1/new/JGB37_520.v"]"\
@@ -176,6 +193,14 @@ if {[string equal [get_filesets -quiet sources_1] ""]} {
 # Set 'sources_1' fileset object
 set obj [get_filesets sources_1]
 set files [list \
+ [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/clk_divider.v"] \
+ [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/i2c_master.v"] \
+ [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/mpu6050_ctrl.v"] \
+ [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/mpu6050_debug_uart.v"] \
+ [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/uart_tx.v"] \
+ [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/top.v"] \
+ [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/l298n.v"] \
+ [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/angle_calc.v"] \
  [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/uart_bluetooth.v"] \
  [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/TB6612FNG.v"] \
  [file normalize "${origin_dir}/Balacing_Robot.srcs/sources_1/new/JGB37_520.v"] \
@@ -232,7 +257,7 @@ set_property -name "top_lib" -value "xil_defaultlib" -objects $obj
 set obj [get_filesets utils_1]
 # Add local files from the original project (-no_copy_sources specified)
 set files [list \
- [file normalize "${origin_dir}/Balacing_Robot/Balacing_Robot.srcs/utils_1/imports/synth_1/pid.dcp" ]\
+ [file normalize "${origin_dir}/Balacing_Robot/Balacing_Robot.srcs/utils_1/imports/synth_1/top.dcp" ]\
 ]
 set added_files [add_files -fileset utils_1 $files]
 
@@ -240,7 +265,7 @@ set added_files [add_files -fileset utils_1 $files]
 # None
 
 # Set 'utils_1' fileset file properties for local files
-set file "synth_1/pid.dcp"
+set file "synth_1/top.dcp"
 set file_obj [get_files -of_objects [get_filesets utils_1] [list "*$file"]]
 set_property -name "netlist_only" -value "0" -objects $file_obj
 
@@ -274,8 +299,7 @@ if { $obj != "" } {
 
 }
 set obj [get_runs synth_1]
-set_property -name "needs_refresh" -value "1" -objects $obj
-set_property -name "incremental_checkpoint" -value "$proj_dir/${_xil_proj_name_}.srcs/utils_1/imports/synth_1/pid.dcp" -objects $obj
+set_property -name "incremental_checkpoint" -value "$proj_dir/${_xil_proj_name_}.srcs/utils_1/imports/synth_1/top.dcp" -objects $obj
 set_property -name "auto_incremental_checkpoint" -value "1" -objects $obj
 set_property -name "strategy" -value "Vivado Synthesis Defaults" -objects $obj
 
