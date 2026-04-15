@@ -8,10 +8,10 @@ module TB6612FNG(
     input reset,
 
     input [1:0] dirA_cmd,
-    input [12:0] dutyA,
+    input [6:0] dutyA,
 
     input [1:0] dirB_cmd,
-    input [12:0] dutyB,
+    input [6:0] dutyB,
 
     output reg PWMA,
     output reg AIN1,
@@ -41,6 +41,10 @@ module TB6612FNG(
     end
 
     reg [15:0] pwm_counter;
+    wire [12:0] dutyA_50;
+    wire [12:0] dutyB_50;
+    assign dutyA_50 = 50 * dutyA;
+    assign dutyB_50 = 50 * dutyB;
 
     always @(posedge clk or posedge reset) begin
         if (reset) begin
@@ -53,14 +57,21 @@ module TB6612FNG(
             if(pwm_counter >= 4999) pwm_counter <= 0;
             else pwm_counter <= pwm_counter + 1;
 
-            if (pwm_counter < dutyA) PWMA <= 1'b1;
+            if (pwm_counter < dutyA_50) PWMA <= 1'b1;
             else PWMA <= 1'b0;
 
-            if (pwm_counter < dutyB) PWMB <= 1'b1;
+            if (pwm_counter < dutyB_50) PWMB <= 1'b1;
             else PWMB <= 1'b0;
 
         end
         
     end
 
+endmodule
+
+
+module Encoder (  
+    
+);
+    
 endmodule
