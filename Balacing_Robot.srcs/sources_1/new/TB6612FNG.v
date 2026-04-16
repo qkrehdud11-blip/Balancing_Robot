@@ -69,9 +69,3 @@ module TB6612FNG(
 
 endmodule
 
-
-module Encoder (  
-    
-);
-    
-endmodule
