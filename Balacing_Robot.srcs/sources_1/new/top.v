@@ -395,14 +395,28 @@ module top
                     gy_sum <= gy_sum + gy_raw;
                     gz_sum <= gz_sum + gz_raw;
 
+
+
+                    // 수정 전
+                    // if (cal_cnt == 8'd31) begin
+                    //     // 평균 = 합 / 256 = >>> 8
+                    //     ax_bias   <= ax_sum >>> 8;
+                    //     ay_bias   <= ay_sum >>> 8;
+                    //     az_bias   <= az_sum >>> 8;
+                    //     gx_bias   <= gx_sum >>> 8;
+                    //     gy_bias   <= gy_sum >>> 8;
+                    //     gz_bias   <= gz_sum >>> 8;
+                    //     bias_done <= 1'b1;
+                    // end
+                    // 수정 후
                     if (cal_cnt == 8'd31) begin
-                        // 평균 = 합 / 256 = >>> 8
-                        ax_bias   <= ax_sum >>> 8;
-                        ay_bias   <= ay_sum >>> 8;
-                        az_bias   <= az_sum >>> 8;
-                        gx_bias   <= gx_sum >>> 8;
-                        gy_bias   <= gy_sum >>> 8;
-                        gz_bias   <= gz_sum >>> 8;
+                        // 평균 = 합 / 32 = >>> 5
+                        ax_bias   <= (ax_sum + ax_raw) >>> 5;
+                        ay_bias   <= (ay_sum + ay_raw) >>> 5;
+                        az_bias   <= (az_sum + az_raw) >>> 5;
+                        gx_bias   <= (gx_sum + gx_raw) >>> 5;
+                        gy_bias   <= (gy_sum + gy_raw) >>> 5;
+                        gz_bias   <= (gz_sum + gz_raw) >>> 5;
                         bias_done <= 1'b1;
                     end
                     else begin
@@ -427,7 +441,7 @@ module top
                 ay_corr <= ay_raw - ay_bias;
 
                 // AZ는 초기 단계에서는 raw 유지
-                az_corr <= az_raw;
+                az_corr <= az_raw - az_bias;
 
                 // 자이로 bias 제거
                 gx_corr <= gx_raw - gx_bias;
@@ -601,7 +615,12 @@ module top
         .kp         (kp_reg),
         .ki         (ki_reg),
         .kd         (kd_reg),
-        .setpoint   (angle_offset), // SP= 에 기준각 표시
+        // 수정
+        // .setpoint   (angle_offset), // SP= 에 기준각 표시
+        .setpoint   (pid_setpoint), // SP= 에 최종 PID 목표각 표시
+        .angle_offset (angle_offset),   // OF= 에 저장된 기준각 표시
+
+        
 
         .vel_a      (enc_vel_a),
         .vel_b      (enc_vel_b),

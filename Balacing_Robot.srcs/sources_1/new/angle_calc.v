@@ -34,6 +34,17 @@ module angle_calc
     reg signed [31:0] gyro_q8_reg;
     reg               calc_step2;
 
+
+    // 추가
+    wire signed [15:0] accel_z_abs = accel_z[15] ? -accel_z : accel_z;
+
+
+    // accel_z 크기에 따라 사용할 accel gain 미리 선택(추가)
+    wire signed [31:0] accel_gain =
+        (accel_z_abs > 16'sd14000) ? 32'sd80 :
+        (accel_z_abs > 16'sd10000) ? 32'sd60 :
+                                    32'sd40;
+
     // 다음 클럭의 상보 필터 계산 결과를 담을 wire (1클럭 지연 없는 출력을 위함)
     wire signed [31:0] next_angle_q8;
     assign next_angle_q8 = (ALPHA_NUM  * (angle_q8 + gyro_q8_reg) + 
@@ -51,16 +62,33 @@ module angle_calc
             accel_q8_reg <= 32'sd0;
             gyro_q8_reg  <= 32'sd0;
             calc_step2   <= 1'b0;
+
         end
         else begin
             // 펄스성 신호 기본값 초기화
             angle_valid <= 1'b0;
             calc_step2  <= 1'b0;
 
-            // [Stage 1] 데이터 수신 및 1차 곱셈 (무거운 연산 먼저 수행)
+
+
+            // 수정 전
+            // // [Stage 1] 데이터 수신 및 1차 곱셈 (무거운 연산 먼저 수행)
+            // if (data_valid) begin
+            //     // 수정 전
+            //     // accel_q8_reg <= $signed(accel_x) * 32'sd90;
+            //     // 수정 후
+            //     accel_q8_reg <= $signed(accel_x) * 32'sd60;
+                
+            //     gyro_q8_reg  <= ($signed(gyro_x) * 32'sd500) >>> 8;                
+            //     calc_step2   <= 1'b1; // 다음 클럭에서 2단계 진행하도록 플래그 세움
+            // end
+
+
+            // 수정 후
+            // // [Stage 1] 데이터 수신 및 1차 곱셈 (무거운 연산 먼저 수행)            
             if (data_valid) begin
-                accel_q8_reg <= $signed(accel_x) * 32'sd90;
-                gyro_q8_reg  <= ($signed(gyro_x) * 32'sd500) >>> 8;                
+                accel_q8_reg <= $signed(accel_x) * accel_gain;
+                gyro_q8_reg  <= ($signed(gyro_x) * 32'sd500) >>> 8;
                 calc_step2   <= 1'b1; // 다음 클럭에서 2단계 진행하도록 플래그 세움
             end
 

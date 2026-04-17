@@ -52,8 +52,15 @@ module pid
     //================================================================================
     wire signed [31:0] pid_out     = pid_sum_reg >>> 8;
     wire signed [31:0] neg_pid_out = -pid_out;
-    localparam [15:0] MIN_DUTY = 16'd50;
 
+    // 수정 전
+    // localparam  [15:0] MIN_DUTY    = 16'd50;
+    
+    // 수정 후 
+    // 최소 듀티 보상
+    localparam  [15:0] MIN_DUTY    = 16'd30;
+    // 제자리 잔떨림 방지용 작은 출력 deadband
+    // localparam signed [31:0] OUT_DEAD = 32'sd10;    
 
     //================================================================================
     // FSM PID 로직
@@ -116,34 +123,64 @@ module pid
                 //------------------------------------------------------------------
                 // [Stage 3] 스케일링(>>8) 및 출력 클램핑 + 데드존 보상
                 //------------------------------------------------------------------
-                ST_OUT: begin
-                    // ★ 튜닝 포인트: 모터가 윙 소리만 내고 돌지 않는 최대 PWM 값
-                    // 이 값을 50, 80, 100 등으로 바꿔가며 기어 마찰력을 상쇄시킵니다.
 
+
+                // 수정 이전
+                // ST_OUT: begin
+                //     // ★ 튜닝 포인트: 모터가 윙 소리만 내고 돌지 않는 최대 PWM 값
+                //     // 이 값을 50, 80, 100 등으로 바꿔가며 기어 마찰력을 상쇄시킵니다.
+
+                //     if (pid_out > 32'sd0) begin
+                //         dir <= 1'b0;    // 전진
+                //         // 계산값에 최소 듀티(MIN_DUTY)를 무조건 더해서 출력
+                //         if (pid_out + MIN_DUTY > MAX_DUTY)
+                //             pwm_duty <= MAX_DUTY;
+                //         else
+                //             pwm_duty <= pid_out[15:0] + MIN_DUTY;
+                //     end
+                //     else if (pid_out < 32'sd0) begin
+                //         dir <= 1'b1;    // 후진
+                //         if (neg_pid_out + MIN_DUTY > MAX_DUTY)
+                //             pwm_duty <= MAX_DUTY;
+                //         else
+                //             pwm_duty <= neg_pid_out[15:0] + MIN_DUTY;
+                //     end
+                //     else begin
+                //         // 오차가 완벽히 0일 때는 모터 정지
+                //         dir <= 1'b0;
+                //         pwm_duty <= 16'd0;
+                //     end
+                    
+                //     state <= ST_IDLE; // 모든 연산을 마치고 다시 대기 상태로
+                // end
+
+                // 수정 후 큰 각 보정
+                ST_OUT: begin
                     if (pid_out > 32'sd0) begin
                         dir <= 1'b0;    // 전진
-                        // 계산값에 최소 듀티(MIN_DUTY)를 무조건 더해서 출력
-                        if (pid_out + MIN_DUTY > MAX_DUTY)
+
+                        if (pid_out + $signed({1'b0, MIN_DUTY}) > $signed({1'b0, MAX_DUTY}))
                             pwm_duty <= MAX_DUTY;
                         else
                             pwm_duty <= pid_out[15:0] + MIN_DUTY;
                     end
                     else if (pid_out < 32'sd0) begin
                         dir <= 1'b1;    // 후진
-                        if (neg_pid_out + MIN_DUTY > MAX_DUTY)
+
+                        if (neg_pid_out + $signed({1'b0, MIN_DUTY}) > $signed({1'b0, MAX_DUTY}))
                             pwm_duty <= MAX_DUTY;
                         else
                             pwm_duty <= neg_pid_out[15:0] + MIN_DUTY;
                     end
                     else begin
-                        // 오차가 완벽히 0일 때는 모터 정지
                         dir <= 1'b0;
                         pwm_duty <= 16'd0;
                     end
-                    
-                    state <= ST_IDLE; // 모든 연산을 마치고 다시 대기 상태로
+
+                    state <= ST_IDLE;
                 end
 
+    
                 default: state <= ST_IDLE;
             endcase
         end
