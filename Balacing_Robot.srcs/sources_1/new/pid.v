@@ -42,7 +42,6 @@ module pid
     parameter [6:0] DUTY_ACTIVE_MIN    = 7'd20;
     parameter [6:0] DUTY_MAX_MOTOR     = 7'd70;
     parameter signed [31:0] OUT_DEAD   = 32'sd4;
-    parameter signed [15:0] LARGE_ERR_THR = 16'sd120;
     parameter signed [15:0] GYRO_D_DEAD = 16'sd96;
     parameter signed [15:0] GYRO_D_LIM  = 16'sd1024;
     parameter signed [15:0] PID_OUT_CLAMP = 16'sd900;
@@ -86,7 +85,7 @@ module pid
     // 바로 세우는 반응을 먼저 보기 위해 기본값은 끈다.
     // 필요하면 1~2 정도로 다시 키워가면 된다.
     //--------------------------------------------------------------------------
-    localparam signed [15:0] KV_DAMP = 16'sd2;
+    localparam signed [15:0] KV_DAMP = 16'sd6;
     // These local polarity options let us verify velocity / gyro sign safely
     // without changing module ports. Defaults preserve current top-level wiring.
     localparam                VEL_SIGN_INV  = 1'b0;
@@ -186,7 +185,7 @@ module pid
     // - mid   : smooth practical recovery
     // - large : strong recovery without an immediate jump to max duty
     wire [6:0] duty_mid_w =
-        7'd36 + (mid_delta_w >> 7) + (mid_delta_w >> 8);
+        7'd30 + (mid_delta_w >> 8);
     wire [6:0] duty_large_w =
         7'd58 + (large_delta_w >> 5);
     wire [6:0] duty_piecewise_w =
