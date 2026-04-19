@@ -48,21 +48,21 @@ module pid
     parameter signed [15:0] PID_OUT_CLAMP = 16'sd900;
     parameter signed [31:0] D_TERM_SUM_CLAMP = 32'sd30720;
     parameter signed [15:0] MAP_SMALL_THR = 16'sd160;
-    parameter signed [15:0] MAP_MID_THR   = 16'sd256;
+    parameter signed [15:0] MAP_MID_THR   = 16'sd200;
     parameter signed [15:0] SMALL_MIN_OUT_THR = 16'sd56;
     // Center-hold lock state:
     // once the robot is both near upright and nearly stationary, force the
     // motor command to zero so residual PWM does not keep exciting oscillation.
     // Hysteresis is required so the controller does not chatter between
     // "hold" and "recover" on every small sensor fluctuation.
-    parameter signed [15:0] HOLD_ENTER_THR = 16'sd6;
-    parameter signed [15:0] HOLD_EXIT_THR  = 16'sd8;
+    parameter signed [15:0] HOLD_ENTER_THR = 16'sd3;
+    parameter signed [15:0] HOLD_EXIT_THR  = 16'sd5;
     parameter signed [15:0] SMALL_VEL_THR  = 16'sd6;
     parameter signed [15:0] HOLD_EXIT_VEL_THR = 16'sd6;
     // Direction hysteresis reduces rapid forward/reverse flipping when the
     // controller is close to zero and the signed PID output dithers.
-    parameter signed [15:0] DIR_ENTER_THR = 16'sd8;
-    parameter signed [15:0] DIR_EXIT_THR  = 16'sd3;
+    parameter signed [15:0] DIR_ENTER_THR = 16'sd4;
+    parameter signed [15:0] DIR_EXIT_THR  = 16'sd2;
     // Only allow boost once the robot is clearly away from center and the
     // wheel axis still looks close to rest.
     parameter signed [15:0] BOOST_ERR_MIN      = 16'sd96;
@@ -188,7 +188,7 @@ module pid
     wire [6:0] duty_mid_w =
         7'd36 + (mid_delta_w >> 7) + (mid_delta_w >> 8);
     wire [6:0] duty_large_w =
-        7'd74 + (large_delta_w >> 4);
+        7'd58 + (large_delta_w >> 5);
     wire [6:0] duty_piecewise_w =
         (pid_out_abs_reg <= MAP_SMALL_THR) ? duty_small_w :
         (pid_out_abs_reg <= MAP_MID_THR)   ? duty_mid_w   :
@@ -239,6 +239,7 @@ module pid
     wire hold_apply_w = center_hold_next_w;
     wire just_released_hold_w = hold_prev_reg && !hold_apply_w;
     wire hold_release_soft_w = (hold_release_soft_cnt != 2'd0);
+    wire hold_release_apply_w = hold_release_soft_w || just_released_hold_w;
     wire [6:0] duty_after_soft_w =
         (duty_final_w > HOLD_RELEASE_DUTY_MAX) ? HOLD_RELEASE_DUTY_MAX : duty_final_w;
     wire [6:0] boost_after_soft_w =
@@ -484,16 +485,16 @@ module pid
                         if ((boost_hold_cnt != 3'd0) && boost_req_w) begin
                             sat_flag <= boost_sat_w;
                             active_min_applied <= 1'b1;
-                            motor_duty_dbg <= hold_release_soft_w ? boost_after_soft_w : boost_duty_w;
-                            motor_duty_sel_reg <= hold_release_soft_w ? boost_after_soft_w : boost_duty_w;
+                            motor_duty_dbg <= hold_release_apply_w ? boost_after_soft_w : boost_duty_w;
+                            motor_duty_sel_reg <= hold_release_apply_w ? boost_after_soft_w : boost_duty_w;
                             boost_active_dbg <= 1'b1;
                             boost_hold_cnt <= boost_hold_cnt - 3'd1;
                         end
                         else begin
                             sat_flag <= sat_flag_w;
                             active_min_applied <= active_min_need_w;
-                            motor_duty_dbg <= hold_release_soft_w ? duty_after_soft_w : duty_final_w;
-                            motor_duty_sel_reg <= hold_release_soft_w ? duty_after_soft_w : duty_final_w;
+                            motor_duty_dbg <= hold_release_apply_w ? duty_after_soft_w : duty_final_w;
+                            motor_duty_sel_reg <= hold_release_apply_w ? duty_after_soft_w : duty_final_w;
                             if (boost_req_w && (START_BOOST_HOLD_CYCLES != 3'd0))
                                 boost_hold_cnt <= START_BOOST_HOLD_CYCLES - 3'd1;
                             else
