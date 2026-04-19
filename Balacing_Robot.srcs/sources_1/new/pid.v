@@ -48,7 +48,7 @@ module pid
     parameter signed [15:0] PID_OUT_CLAMP = 16'sd900;
     parameter signed [31:0] D_TERM_SUM_CLAMP = 32'sd30720;
     parameter signed [15:0] MAP_SMALL_THR = 16'sd160;
-    parameter signed [15:0] MAP_MID_THR   = 16'sd432;
+    parameter signed [15:0] MAP_MID_THR   = 16'sd256;
     parameter signed [15:0] SMALL_MIN_OUT_THR = 16'sd56;
     // Center-hold lock state:
     // once the robot is both near upright and nearly stationary, force the
@@ -188,7 +188,7 @@ module pid
     wire [6:0] duty_mid_w =
         7'd36 + (mid_delta_w >> 7) + (mid_delta_w >> 8);
     wire [6:0] duty_large_w =
-        7'd69 + (large_delta_w >> 5);
+        7'd74 + (large_delta_w >> 4);
     wire [6:0] duty_piecewise_w =
         (pid_out_abs_reg <= MAP_SMALL_THR) ? duty_small_w :
         (pid_out_abs_reg <= MAP_MID_THR)   ? duty_mid_w   :
