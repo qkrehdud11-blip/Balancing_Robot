@@ -54,10 +54,10 @@ module pid
     // motor command to zero so residual PWM does not keep exciting oscillation.
     // Hysteresis is required so the controller does not chatter between
     // "hold" and "recover" on every small sensor fluctuation.
-    parameter signed [15:0] HOLD_ENTER_THR = 16'sd3;
-    parameter signed [15:0] HOLD_EXIT_THR  = 16'sd5;
-    parameter signed [15:0] SMALL_VEL_THR  = 16'sd6;
-    parameter signed [15:0] HOLD_EXIT_VEL_THR = 16'sd6;
+    parameter signed [15:0] HOLD_ENTER_THR = 16'sd6;
+    parameter signed [15:0] HOLD_EXIT_THR  = 16'sd10;
+    parameter signed [15:0] SMALL_VEL_THR  = 16'sd8;
+    parameter signed [15:0] HOLD_EXIT_VEL_THR = 16'sd8;
     // Direction hysteresis reduces rapid forward/reverse flipping when the
     // controller is close to zero and the signed PID output dithers.
     parameter signed [15:0] DIR_ENTER_THR = 16'sd4;
@@ -85,7 +85,7 @@ module pid
     // 바로 세우는 반응을 먼저 보기 위해 기본값은 끈다.
     // 필요하면 1~2 정도로 다시 키워가면 된다.
     //--------------------------------------------------------------------------
-    localparam signed [15:0] KV_DAMP = 16'sd9;
+    localparam signed [15:0] KV_DAMP = 16'sd8;
     // These local polarity options let us verify velocity / gyro sign safely
     // without changing module ports. Defaults preserve current top-level wiring.
     localparam                VEL_SIGN_INV  = 1'b0;
@@ -178,7 +178,7 @@ module pid
     wire [15:0] mid_delta_w   = pid_out_abs_reg[15:0] - MAP_SMALL_THR[15:0];
     wire [15:0] large_delta_w = pid_out_abs_reg[15:0] - MAP_MID_THR[15:0];
     wire [6:0] duty_small_w =
-        (pid_out_abs_reg[15:0] >> 3);
+        (pid_out_abs_reg[15:0] >> 4);
     // Keep the existing piecewise shape, but let small/mid/large each cover
     // a different part of the stand-up problem:
     // - small : quiet near center
@@ -203,6 +203,7 @@ module pid
                                                          active_min_ramp_ext_w[6:0];
     wire active_min_need_w =
         (pid_out_abs_reg >= SMALL_MIN_OUT_THR) &&
+        (error_abs_reg > HOLD_EXIT_THR) &&
         (active_min_ramp_w > duty_piecewise_w);
     wire [6:0] duty_pre_sat_w =
         active_min_need_w ? active_min_ramp_w : duty_piecewise_w;
