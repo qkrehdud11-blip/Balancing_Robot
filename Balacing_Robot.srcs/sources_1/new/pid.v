@@ -40,7 +40,7 @@ module pid
     parameter signed [31:0] I_MIN      = -32'sd500000;
     // Tune these against the actual JGB37-520 drivetrain.
     parameter [6:0] DUTY_ACTIVE_MIN    = 7'd20;
-    parameter [6:0] DUTY_MAX_MOTOR     = 7'd70;
+    parameter [6:0] DUTY_MAX_MOTOR     = 7'd80;
     parameter signed [31:0] OUT_DEAD   = 32'sd4;
     parameter signed [15:0] GYRO_D_DEAD = 16'sd96;
     parameter signed [15:0] GYRO_D_LIM  = 16'sd1024;
@@ -85,7 +85,7 @@ module pid
     // 바로 세우는 반응을 먼저 보기 위해 기본값은 끈다.
     // 필요하면 1~2 정도로 다시 키워가면 된다.
     //--------------------------------------------------------------------------
-    localparam signed [15:0] KV_DAMP = 16'sd6;
+    localparam signed [15:0] KV_DAMP = 16'sd9;
     // These local polarity options let us verify velocity / gyro sign safely
     // without changing module ports. Defaults preserve current top-level wiring.
     localparam                VEL_SIGN_INV  = 1'b0;
