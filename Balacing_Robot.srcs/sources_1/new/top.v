@@ -108,7 +108,6 @@ module top
     //==========================================================================
     wire               init_done;
     wire               data_valid;
-    // wire [2:0]         last_err;
 
     //==========================================================================
     // UART line
@@ -305,19 +304,6 @@ module top
     end
 
     //==========================================================================
-    // direction thresholds
-    //==========================================================================
-    localparam signed [15:0] TILT_TH = 16'sd1000;
-    localparam signed [15:0] Z_TH    = 16'sd12000;
-
-    // wire dir_front;
-    // wire dir_back;
-    // wire dir_left;
-    // wire dir_right;
-    // wire dir_up;
-    // wire dir_down;
-
-    //==========================================================================
     // Fall detection + recovery FSM  (히스테리시스 적용)
     //==========================================================================
     // ① 넘어짐 진입: |angle_adj| > 1200  (12°)
@@ -431,16 +417,6 @@ module top
     assign pid_error_mon = pid_setpoint - pid_angle_in;
 
     //==========================================================================
-    // simple direction indicators
-    //==========================================================================
-    // assign dir_front = (ax_corr >  TILT_TH);
-    // assign dir_back  = (ax_corr < -TILT_TH);
-    // assign dir_right = (ay_corr >  TILT_TH);
-    // assign dir_left  = (ay_corr < -TILT_TH);
-    // assign dir_up    = (az_corr >  Z_TH);
-    // assign dir_down  = (az_corr < -Z_TH);
-
-    //==========================================================================
     // encoder
     //==========================================================================
     encoder u_encoder
@@ -492,7 +468,6 @@ module top
 
         .init_done  (init_done),
         .data_valid (data_valid),
-        // .last_err   (last_err),
 
         .ax         (ax_raw),
         .ay         (ay_raw),

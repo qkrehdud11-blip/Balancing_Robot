@@ -68,9 +68,6 @@ module pid
     parameter signed [15:0] BOOST_ERR_MIN      = 16'sd96;
     parameter signed [15:0] BOOST_REST_VEL_THR = 16'sd6;
     parameter [1:0]         BOOST_DIR_STABLE_CYCLES = 2'd2;
-    // Apply the strongest velocity damping only near center where overshoot
-    // is most harmful. At larger angles it is reduced so recovery stays strong.
-    parameter signed [15:0] VEL_DAMP_FULL_ERR_THR = 16'sd128;
     // After center hold releases, keep the next couple of control updates
     // gentle so recovery ramps up instead of kicking immediately.
     parameter [2:0]         HOLD_RELEASE_SOFT_CYCLES = 3'd4;
@@ -80,17 +77,6 @@ module pid
     parameter        START_BOOST_ENABLE      = 1'b1;
     parameter [2:0]  START_BOOST_HOLD_CYCLES = 3'd1;
     parameter [6:0]  START_BOOST_DUTY        = 7'd22;
-
-    //--------------------------------------------------------------------------
-    // wheel velocity damping
-    // 바로 세우는 반응을 먼저 보기 위해 기본값은 끈다.
-    // 필요하면 1~2 정도로 다시 키워가면 된다.
-    //--------------------------------------------------------------------------
-    localparam signed [15:0] KV_DAMP = 16'sd0;
-    // These local polarity options let us verify velocity / gyro sign safely
-    // without changing module ports. Defaults preserve current top-level wiring.
-    localparam                VEL_SIGN_INV  = 1'b0;
-    localparam                GYRO_SIGN_INV = 1'b0;
 
     // D항은 P300~P400 영역을 망치지 않도록 더 보수적으로 사용한다.
     // 작은 D 값이 곧바로 saturation을 만들지 않게 추가 축소를 둔다.
@@ -122,14 +108,12 @@ module pid
     reg signed [31:0] p_term_reg;
     reg signed [31:0] ki_term_reg;
     reg signed [31:0] d_term_reg;
-    reg signed [31:0] v_term_reg;
     reg signed [31:0] pid_sum_reg;
     reg [6:0]         motor_duty_sel_reg;
     reg signed [15:0] pid_out_abs_reg;
     reg signed [15:0] error_abs_reg;
     reg signed [15:0] gyro_d_reg;
     reg signed [15:0] vel_abs_reg;
-    reg               vel_same_dir_reg;
     reg               pid_active_reg;
     reg               center_hold_reg;
     reg               hold_prev_reg;
@@ -144,26 +128,18 @@ module pid
     // angle_in must already be in the single corrected control frame.
     // Do not re-apply any captured offset inside pid.v.
     wire signed [15:0] error_next_w = setpoint - angle_in;
-    // Keep sign handling explicit so D/velocity damping can be verified
-    // without silently relying on top-level negations.
-    wire signed [15:0] gyro_aligned_w = GYRO_SIGN_INV ? -gyro_in : gyro_in;
-    wire signed [15:0] vel_aligned_w  = VEL_SIGN_INV  ? -vel_in  : vel_in;
-    wire signed [15:0] gyro_abs_w = gyro_aligned_w[15] ? -gyro_aligned_w : gyro_aligned_w;
-    wire signed [15:0] vel_abs_w  = vel_aligned_w[15]  ? -vel_aligned_w  : vel_aligned_w;
+    wire signed [15:0] gyro_abs_w = gyro_in[15] ? -gyro_in : gyro_in;
+    wire signed [15:0] vel_abs_w  = vel_in[15]  ? -vel_in  : vel_in;
     wire signed [15:0] gyro_d_used_w =
         (gyro_abs_w <= GYRO_D_DEAD) ? 16'sd0 :
-        (gyro_aligned_w >  GYRO_D_LIM) ? GYRO_D_LIM :
-        (gyro_aligned_w < -GYRO_D_LIM) ? -GYRO_D_LIM :
-                                         gyro_aligned_w;
+        (gyro_in >  GYRO_D_LIM) ? GYRO_D_LIM :
+        (gyro_in < -GYRO_D_LIM) ? -GYRO_D_LIM :
+                                   gyro_in;
     wire signed [31:0] d_term_used_w =
         (d_term_reg >  D_TERM_SUM_CLAMP) ?  D_TERM_SUM_CLAMP :
         (d_term_reg < -D_TERM_SUM_CLAMP) ? -D_TERM_SUM_CLAMP :
                                            d_term_reg;
     wire signed [31:0] d_term_shaped_w = d_term_used_w >>> D_TERM_POST_SHIFT;
-    wire signed [31:0] v_term_used_w =
-        !vel_same_dir_reg ? 32'sd0 :
-        (error_abs_reg <= VEL_DAMP_FULL_ERR_THR) ? v_term_reg :
-                                                   (v_term_reg >>> 1);
     wire signed [15:0] pid_out_used_w =
         (pid_out >  PID_OUT_CLAMP) ?  PID_OUT_CLAMP :
         (pid_out < -PID_OUT_CLAMP) ? -PID_OUT_CLAMP :
@@ -266,14 +242,12 @@ module pid
             p_term_reg  <= 32'sd0;
             ki_term_reg <= 32'sd0;
             d_term_reg  <= 32'sd0;
-            v_term_reg  <= 32'sd0;
             pid_sum_reg <= 32'sd0;
             motor_duty_sel_reg <= 7'd0;
             pid_out_abs_reg <= 16'sd0;
             error_abs_reg <= 16'sd0;
             gyro_d_reg <= 16'sd0;
             vel_abs_reg <= 16'sd0;
-            vel_same_dir_reg <= 1'b0;
             pid_active_reg <= 1'b0;
             center_hold_reg <= 1'b0;
             hold_prev_reg <= 1'b0;
@@ -305,13 +279,6 @@ module pid
                         error      <= error_next_w;
                         gyro_d_reg <= gyro_d_used_w;
                         vel_abs_reg <= vel_abs_w;
-                        // Only damp when wheel motion already matches the
-                        // requested correction direction. Otherwise the outer
-                        // velocity signal can fight recovery instead of damping.
-                        vel_same_dir_reg <=
-                            (error_next_w != 16'sd0) &&
-                            (vel_aligned_w != 16'sd0) &&
-                            (error_next_w[15] == vel_aligned_w[15]);
                         state      <= ST_TERMS;
                     end
                 end
@@ -329,16 +296,6 @@ module pid
                     // top.v에서 angle 부호를 뒤집어 넣고 있으므로 gyro도 같은 부호로 쓴다.
                     //------------------------------------------------------------------
                     d_term_reg <= ($signed(kd) * $signed(gyro_d_reg)) >>> GYRO_D_SHIFT;
-
-                    //------------------------------------------------------------------
-                    // 추가:
-                    // 속도가 클수록 PID 출력을 줄이는 damping 항
-                    // 중심 근처에서 너무 세게 밀어 반대편으로 넘어가는 것을 줄임
-                    //------------------------------------------------------------------
-                    // Store damping magnitude only. Sign handling is done
-                    // structurally in ST_SUM so damping can never become
-                    // positive feedback by accident.
-                    v_term_reg <= $signed(KV_DAMP) * $signed(vel_abs_reg);
 
                     // 정지 근처에서는 적분항을 더 쌓지 않고,
                     // 이미 쌓인 적분은 천천히 줄여 잔류 출력 때문에
@@ -375,10 +332,7 @@ module pid
                 // [Stage 3] PID 항 합산
                 //------------------------------------------------------------------
                 ST_SUM: begin
-                    // D-term and velocity feedback are both applied as damping.
-                    // If either sign path is wrong, adding them would amplify
-                    // motion. Subtracting the shaped terms makes the intent explicit.
-                    pid_sum_reg <= p_term_reg + integral - d_term_shaped_w - v_term_used_w;
+                    pid_sum_reg <= p_term_reg + integral - d_term_shaped_w;
                     state       <= ST_OUT;
                 end
 

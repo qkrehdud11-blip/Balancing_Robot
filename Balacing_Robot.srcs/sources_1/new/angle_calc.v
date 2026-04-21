@@ -65,23 +65,7 @@ module angle_calc
             angle_valid <= 1'b0;
             calc_step2  <= 1'b0;
 
-
-
-            // 수정 전
-            // // [Stage 1] 데이터 수신 및 1차 곱셈 (무거운 연산 먼저 수행)
-            // if (data_valid) begin
-            //     // 수정 전
-            //     // accel_q8_reg <= $signed(accel_x) * 32'sd90;
-            //     // 수정 후
-            //     accel_q8_reg <= $signed(accel_x) * 32'sd60;
-                
-            //     gyro_q8_reg  <= ($signed(gyro_x) * 32'sd500) >>> 8;                
-            //     calc_step2   <= 1'b1; // 다음 클럭에서 2단계 진행하도록 플래그 세움
-            // end
-
-
-            // 수정 후
-            // // [Stage 1] 데이터 수신 및 1차 곱셈 (무거운 연산 먼저 수행)            
+            // [Stage 1] 데이터 수신 및 1차 곱셈
             if (data_valid) begin
                 accel_q8_reg <= $signed(accel_x) * ACCEL_GAIN;
                 // mpu6050_ctrl read period is 5ms, so the gyro integration gain
