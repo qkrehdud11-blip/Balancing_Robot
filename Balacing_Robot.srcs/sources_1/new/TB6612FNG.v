@@ -83,40 +83,7 @@ module TB6612FNG(
         
     end
 
-    // 수정 후 1kHz
-    // reg  [16:0] pwm_counter;
-    // wire [16:0] dutyA_cnt;
-    // wire [16:0] dutyB_cnt;
 
-    // assign dutyA_cnt = 17'd1000 * dutyA;
-    // assign dutyB_cnt = 17'd1000 * dutyB;
-
-    // always @(posedge clk or posedge reset) begin
-    //     if (reset) begin
-    //         pwm_counter <= 17'd0;
-    //         PWMA        <= 1'b0;
-    //         PWMB        <= 1'b0;
-    //     end
-    //     else begin
-    //         // 1kHz PWM period
-    //         if (pwm_counter >= 17'd99999)
-    //             pwm_counter <= 17'd0;
-    //         else
-    //             pwm_counter <= pwm_counter + 17'd1;
-
-    //         // PWM A 출력
-    //         if (pwm_counter < dutyA_cnt)
-    //             PWMA <= 1'b1;
-    //         else
-    //             PWMA <= 1'b0;
-
-    //         // PWM B 출력
-    //         if (pwm_counter < dutyB_cnt)
-    //             PWMB <= 1'b1;
-    //         else
-    //             PWMB <= 1'b0;
-    //     end
-    // end
 
 endmodule
 

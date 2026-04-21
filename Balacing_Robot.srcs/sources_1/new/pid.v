@@ -9,6 +9,7 @@ module pid
     input  wire        clk,
     input  wire        rst_n,
     input  wire        en,                      // 5ms 주기 업데이트 트리거
+    input  wire        i_clear,                 // 적분 초기화 (1클럭 펄스)
 
     input  wire signed [15:0] angle_in,
     input  wire signed [15:0] setpoint,
@@ -85,7 +86,7 @@ module pid
     // 바로 세우는 반응을 먼저 보기 위해 기본값은 끈다.
     // 필요하면 1~2 정도로 다시 키워가면 된다.
     //--------------------------------------------------------------------------
-    localparam signed [15:0] KV_DAMP = 16'sd8;
+    localparam signed [15:0] KV_DAMP = 16'sd0;
     // These local polarity options let us verify velocity / gyro sign safely
     // without changing module ports. Defaults preserve current top-level wiring.
     localparam                VEL_SIGN_INV  = 1'b0;
@@ -289,6 +290,11 @@ module pid
             boost_hold_cnt <= 3'd0;
         end
         else begin
+            if (i_clear) begin
+                integral    <= 32'sd0;
+                prev_error  <= 16'sd0;
+                state       <= ST_IDLE;
+            end
             case (state)
                 //------------------------------------------------------------------
                 // [Stage 0] 오차 갱신 및 대기

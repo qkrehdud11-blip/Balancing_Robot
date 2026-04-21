@@ -389,6 +389,14 @@ module top
     wire fall_motor_cut = (fall_state == FSM_FALLEN);
     wire is_recovering  = (fall_state == FSM_RECOVER);
 
+    // FSM_FALLEN → FSM_RECOVER 전환 시 1클럭 펄스 → PID 적분 초기화
+    reg [1:0] fall_state_prev;
+    wire pid_i_clear = (fall_state == FSM_RECOVER) && (fall_state_prev == FSM_FALLEN);
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) fall_state_prev <= FSM_STAND;
+        else        fall_state_prev <= fall_state;
+    end
+
     // FSM_RECOVER 중에는 is_fallen 무시하고 PID 계속 구동
     assign pid_en = angle_valid_ddd & init_done & bias_done &
                     (~is_fallen | is_recovering);
@@ -749,6 +757,7 @@ module top
         .clk       (clk),
         .rst_n     (rst_n),
         .en        (pid_en),
+        .i_clear   (pid_i_clear),
 
         .angle_in  (pid_angle_in),
         .setpoint  (pid_setpoint),
