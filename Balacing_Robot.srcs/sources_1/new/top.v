@@ -318,16 +318,87 @@ module top
     wire dir_down;
 
     //==========================================================================
-    // PID trigger
+    // Fall detection + recovery FSM  (히스테리시스 적용)
     //==========================================================================
-    assign pid_en = angle_valid_ddd & init_done & bias_done;
+    // ① 넘어짐 진입: |angle_adj| > 1200  (12°)
+    // ② 안정 복귀 : |angle_adj| < 500   (5°)  ← 더 엄격한 이탈 조건으로 경계 진동 방지
+    localparam signed [15:0] FALL_ENTER_THR  = 16'sd1200;
+    localparam signed [15:0] FALL_STABLE_THR = 16'sd700;
+    // tick = 100kHz  →  1 tick = 10us
+    localparam [18:0] FALL_WAIT_TICKS   = 19'd300000;  // 3초 정지
+    localparam [18:0] RECOVER_MAX_TICKS = 19'd200000;  // 2초 회복 시도
+
+    localparam [1:0] FSM_STAND   = 2'd0,
+                     FSM_FALLEN  = 2'd1,
+                     FSM_RECOVER = 2'd2;
+
+    reg [1:0]  fall_state;
+    reg [18:0] fall_timer;
+
+    // 진입/이탈 신호 분리
+    wire is_fallen = (angle_adj >  FALL_ENTER_THR) || (angle_adj < -FALL_ENTER_THR);
+    wire is_stable = (angle_adj <=  FALL_STABLE_THR) && (angle_adj >= -FALL_STABLE_THR);
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            fall_state <= FSM_STAND;
+            fall_timer <= 19'd0;
+        end
+        else begin
+            case (fall_state)
+                // 정상 제어: |AN| > 1200 되면 즉시 정지 진입
+                FSM_STAND: begin
+                    if (is_fallen) begin
+                        fall_state <= FSM_FALLEN;
+                        fall_timer <= 19'd0;
+                    end
+                end
+                // 모터 정지 + 3초 대기 (각도 무관하게 타이머만)
+                FSM_FALLEN: begin
+                    if (tick) begin
+                        if (fall_timer >= FALL_WAIT_TICKS - 1) begin
+                            fall_state <= FSM_RECOVER;
+                            fall_timer <= 19'd0;
+                        end
+                        else
+                            fall_timer <= fall_timer + 19'd1;
+                    end
+                end
+                // PID 재가동, fall 판정 무시
+                // |AN| < 500 으로 완전 안정돼야 STAND 복귀 (경계 진동 방지)
+                FSM_RECOVER: begin
+                    if (is_stable) begin
+                        fall_state <= FSM_STAND;
+                        fall_timer <= 19'd0;
+                    end
+                    else if (tick) begin
+                        if (fall_timer >= RECOVER_MAX_TICKS - 1) begin
+                            // 2초 내 회복 실패 → 다시 3초 대기
+                            fall_state <= FSM_FALLEN;
+                            fall_timer <= 19'd0;
+                        end
+                        else
+                            fall_timer <= fall_timer + 19'd1;
+                    end
+                end
+                default: fall_state <= FSM_STAND;
+            endcase
+        end
+    end
+
+    wire fall_motor_cut = (fall_state == FSM_FALLEN);
+    wire is_recovering  = (fall_state == FSM_RECOVER);
+
+    // FSM_RECOVER 중에는 is_fallen 무시하고 PID 계속 구동
+    assign pid_en = angle_valid_ddd & init_done & bias_done &
+                    (~is_fallen | is_recovering);
 
     //==========================================================================
     // actual motor duty / direction mapping
     //==========================================================================
     // Use the final motor-duty value already resolved inside pid.v so the
     // control path does not need /10 scaling here.
-    assign motor_duty = motor_duty_dbg;
+    assign motor_duty = fall_motor_cut ? 7'd0 : motor_duty_dbg;
 
     // Some builds mount the two gearmotors as mirror images.
     // Keep the optional inversion as a simple bit swap for timing safety.
@@ -555,9 +626,9 @@ module top
     //==========================================================================
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            kp_reg       <= 16'd200;
-            ki_reg       <= 16'd0;
-            kd_reg       <= 16'd0;
+            kp_reg       <= 16'd450;
+            ki_reg       <= 16'd2;
+            kd_reg       <= 16'd500;
             setpoint_reg <= 16'sd0;
             angle_offset <= 16'sd0;
             kv_reg       <= 16'd0;
@@ -752,7 +823,7 @@ module top
         .sat_flag     (sat_flag),
         .active_min_applied(active_min_applied),
         .stby_state   (stby_state),
-        .boost_active (boost_active_dbg),
+        .fall_state   (fall_state),
         .motor_dir_a  (motor_dir_cmd_a),
         .motor_dir_b  (motor_dir_cmd_b),
         .s_capture_req(s_capture_req),

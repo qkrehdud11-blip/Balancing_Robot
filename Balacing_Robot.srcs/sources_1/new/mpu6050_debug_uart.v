@@ -42,7 +42,7 @@ module mpu6050_debug_uart
     input  wire               sat_flag,
     input  wire               active_min_applied,
     input  wire               stby_state,
-    input  wire               boost_active,
+    input  wire        [1:0]  fall_state,
     input  wire        [1:0]  motor_dir_a,
     input  wire        [1:0]  motor_dir_b,
     input  wire               s_capture_req,
@@ -381,7 +381,7 @@ module mpu6050_debug_uart
     reg        sat_dbg;
     reg        act_dbg;
     reg        sb_dbg;
-    reg        bst_dbg;
+    reg [1:0]  fst_dbg;
     reg [1:0]  da_dbg;
     reg [1:0]  db_dbg;
     reg        sr_dbg;
@@ -473,11 +473,11 @@ module mpu6050_debug_uart
                 7'd64: dbg_char = "=";
                 7'd65: dbg_char = sb_dbg ? "1" : "0";
                 7'd66: dbg_char = " ";
-                7'd67: dbg_char = "B";
+                7'd67: dbg_char = "F";
                 7'd68: dbg_char = "S";
                 7'd69: dbg_char = "T";
                 7'd70: dbg_char = "=";
-                7'd71: dbg_char = bst_dbg ? "1" : "0";
+                7'd71: dbg_char = (fst_dbg == 2'd2) ? "2" : (fst_dbg == 2'd1) ? "1" : "0";
                 7'd72: dbg_char = " ";
                 7'd73: dbg_char = "D";
                 7'd74: dbg_char = "A";
@@ -538,7 +538,7 @@ module mpu6050_debug_uart
             md_d4 <= 0; md_d3 <= 0; md_d2 <= 0; md_d1 <= 0; md_d0 <= 0;
             po_sg <= "+"; po_d4 <= 0; po_d3 <= 0; po_d2 <= 0; po_d1 <= 0; po_d0 <= 0;
             dr_dbg <= 1'b0; en_dbg <= 1'b0; sat_dbg <= 1'b0; act_dbg <= 1'b0;
-            sb_dbg <= 1'b0; bst_dbg <= 1'b0;
+            sb_dbg <= 1'b0; fst_dbg <= 2'd0;
             da_dbg <= 2'd0; db_dbg <= 2'd0;
             sr_dbg <= 1'b0;
             sc_dbg <= 1'b0;
@@ -606,7 +606,7 @@ module mpu6050_debug_uart
                     sat_dbg <= sat_flag;
                     act_dbg <= active_min_applied;
                     sb_dbg <= stby_state;
-                    bst_dbg <= boost_active;
+                    fst_dbg <= fall_state;
                     da_dbg <= motor_dir_a;
                     db_dbg <= motor_dir_b;
                     sr_dbg <= s_capture_req;
