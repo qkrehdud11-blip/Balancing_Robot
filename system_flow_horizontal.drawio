@@ -1,0 +1,126 @@
+<mxfile host="app.diagrams.net" agent="Claude">
+  <diagram name="전체 시스템 흐름" id="system-flow-balancing-robot">
+    <mxGraphModel dx="1230" dy="660" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="1654" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;verticalAlign=middle;" value="&lt;b&gt;MPU6050&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#336699&quot;&gt;6축 IMU 센서 (하드웨어)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="460" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#888888;fontColor=#333333;fontSize=10;" value="&lt;div&gt;&lt;font color=&quot;#555555&quot;&gt;클럭 분주&lt;/font&gt;&lt;/div&gt;&lt;font color=&quot;#555555&quot;&gt;100 MHz → 100 kHz tick&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="155" x="70" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" value="i2c_master.v&lt;br&gt;&lt;font color=&quot;#336600&quot;&gt;I2C 마스터 FSM (25 상태)&lt;br&gt;write / burst-read 지원&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="175" x="250" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="mpu6050_ctrl.v&lt;br&gt;&lt;font color=&quot;#7d6608&quot;&gt;초기화 + 6축 데이터 파싱&lt;br&gt;5 ms 주기 burst-read&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="180" x="460" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="15" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" value="encoder.v&lt;br&gt;&lt;font color=&quot;#336699&quot;&gt;쿼드라처 디코더&lt;br&gt;위치(pos) / 속도(vel) 측정&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="170" x="800" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="14" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="Bias 보정 &lt;font color=&quot;#999999&quot;&gt;(top.v 내장)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#7d6608&quot;&gt;32샘플 평균 → 정적 오프셋 제거&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="180" x="460" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="16" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="angle_calc.v&lt;br&gt;&lt;font color=&quot;#7d6608&quot;&gt;상보 필터 α = 0.97&lt;br&gt;각도 출력 (0.01° 단위)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="180" x="460" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="17" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" value="Outer Loop &lt;font color=&quot;#999999&quot;&gt;(top.v 내장)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#4d1a7f&quot;&gt;엔코더 위치·속도 보정&lt;br&gt;setpoint 동적 조정&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="170" x="800" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#888888;fontColor=#333333;fontSize=10;" value="UART RX&lt;br&gt;&lt;font color=&quot;#555555&quot;&gt;런타임 이득 입력&lt;br&gt;P / I / D / V / S 명령&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="170" x="60" y="575" as="geometry" />
+        </mxCell>
+        <mxCell id="19" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" value="&lt;b&gt;pid.v&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#7d0000&quot;&gt;PID 제어기 — 7단계 파이프라인 FSM&lt;br&gt;P항 + I항(Anti-windup) + D항(자이로)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="200" x="450" y="575" as="geometry" />
+        </mxCell>
+        <mxCell id="23" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#888888;fontColor=#333333;fontSize=10;" value="&lt;font color=&quot;#555555&quot;&gt;&lt;span style=&quot;color: rgb(51, 51, 51);&quot;&gt;UART TX&lt;/span&gt;&lt;br style=&quot;color: rgb(51, 51, 51);&quot;&gt;디버그 UART 출력&lt;br&gt;→ PC 터미널 (A18 핀)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="170" x="60" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="20" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" value="Fall Detection FSM &lt;font color=&quot;#999999&quot;&gt;(top.v 내장)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#7d0000&quot;&gt;STAND / FALLEN / RECOVER&lt;br&gt;낙하 감지 (±12°) · 복구 (±7°)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="200" x="450" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" value="TB6612FNG.v&lt;br&gt;&lt;font color=&quot;#4d1a7f&quot;&gt;모터 드라이버 / 20 kHz PWM&lt;br&gt;AIN1/AIN2 · BIN1/BIN2 방향 제어&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="200" x="450" y="825" as="geometry" />
+        </mxCell>
+        <mxCell id="22" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" value="&lt;b&gt;JGB37-520 모터 × 2&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#336699&quot;&gt;엔코더 내장 (하드웨어)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="60" width="200" x="450" y="950" as="geometry" />
+        </mxCell>
+        <mxCell id="101" edge="1" parent="1" source="11" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="12" value="tick">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="103" edge="1" parent="1" source="10" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;startArrow=block;startFill=1;endArrow=block;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="12" value="I2C SDA / SCL">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="104" edge="1" parent="1" source="12" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;startArrow=block;startFill=1;endArrow=block;endFill=1;" target="13" value="start_req / busy&lt;br&gt;done / rx_buf">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="105" edge="1" parent="1" source="13" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;" target="14" value="raw ax/ay/az&lt;br&gt;gx/gy/gz">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="106" edge="1" parent="1" source="14" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;" target="16" value="보정된 ax / az / gx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="107" edge="1" parent="1" source="16" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;" target="19" value="angle_adj (0.01°)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="108" edge="1" parent="1" source="16" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" target="17" value="angle">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="109" edge="1" parent="1" source="15" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;" target="17" value="vel_a / vel_b&lt;br&gt;pos_a / pos_b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="110" edge="1" parent="1" source="17" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="19" value="pid_setpoint">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="111" edge="1" parent="1" source="18" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="19" value="KP / KI / KD / KV">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="112" edge="1" parent="1" source="19" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;" target="20" value="duty / dir">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="113" edge="1" parent="1" source="20" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;dashed=1;endArrow=open;endFill=0;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;" target="19" value="i_clear (적분 초기화)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="370" y="727" />
+              <mxPoint x="370" y="630" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="114" edge="1" parent="1" source="20" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;" target="21" value="motor_duty / motor_cut">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="115" edge="1" parent="1" source="21" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;" target="22" value="PWMA/B + AIN1/AIN2&lt;br&gt;BIN1/BIN2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="116" edge="1" parent="1" source="22" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;dashed=1;endArrow=open;endFill=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=1;entryDx=0;entryDy=0;" target="15" value="엔코더 A/B 신호 (피드백)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1010" y="980" />
+              <mxPoint x="1010" y="255" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="118" edge="1" parent="1" source="14" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;dashed=1;endArrow=open;endFill=0;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="23" value="6축 보정 데이터">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="360" y="347" />
+              <mxPoint x="360" y="440" />
+              <mxPoint x="145" y="440" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="119" edge="1" parent="1" source="19" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=10;dashed=1;endArrow=open;endFill=0;exitX=0;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="23" value="pwm_duty / pid_out&lt;br&gt;fall_state">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="450" y="560" />
+              <mxPoint x="350" y="560" />
+              <mxPoint x="350" y="517" />
+            </Array>
+            <mxPoint x="60" y="518" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
