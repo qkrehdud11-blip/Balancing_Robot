@@ -1,7 +1,6 @@
 
 ![title](images/title.png)
 
-
 # 🤖 Project 5 Balancing Robot
 
 ## **1. Project Summary (프로젝트 요약)**
