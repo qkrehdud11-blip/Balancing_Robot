@@ -4,7 +4,7 @@
 # 🤖 Project 5 Balancing Robot
 
 ## **1. Project Summary (프로젝트 요약)**
-Basys3(Artix-7 FPGA)와 Encoder가 있는 Gear DC 모터(JGB37-520)를 활용하여  밸런싱 로봇 제작
+Basys3(Artix-7 FPGA), MPU6050 및 Encoder가 있는 Gear DC 모터(JGB37-520)를 활용하여  밸런싱 로봇 제작
 
 
 ## 2. Key Features (주요 기능)
